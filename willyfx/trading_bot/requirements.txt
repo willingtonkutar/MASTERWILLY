@@ -1,0 +1,10 @@
+MetaTrader5
+pandas
+numpy
+requests
+ta
+python-dotenv
+rich
+loguru
+matplotlib
+scipy

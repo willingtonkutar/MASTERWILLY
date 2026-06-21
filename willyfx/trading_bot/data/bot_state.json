@@ -1,0 +1,66 @@
+{
+  "session_start": "2026-06-01T18:59:19.967835",
+  "today_date": "2026-06-22",
+  "open_trades": [],
+  "closed_trades": [],
+  "rejected_trades": [
+    {
+      "timestamp": "2026-06-01T20:16:20.814263",
+      "reason": "SKIPPED: weak conviction (BUY < +5.5)",
+      "direction": "BUY",
+      "score": 4.6,
+      "confidence": "MEDIUM",
+      "setup_tag": "BUY|HIGH|SWEEP|NO_BOS|NO_CHOCH",
+      "regime": "TREND",
+      "session": "NEW_YORK",
+      "entry_price": 4475.21,
+      "spread": 0.0,
+      "atr": 9.393571428571379,
+      "outcomes": {
+        "15m": {
+          "timestamp": "2026-06-01T20:31:21.056459",
+          "current_price": 4483.68,
+          "pip_movement": 8.470000000000255,
+          "r_multiple": 0.9016804805718515
+        },
+        "30m": {
+          "timestamp": "2026-06-01T20:46:30.079507",
+          "current_price": 4493.78,
+          "pip_movement": 18.56999999999971,
+          "r_multiple": 1.9768838871568497
+        },
+        "1h": {
+          "timestamp": "2026-06-17T12:37:57.430769",
+          "current_price": 4330.16,
+          "pip_movement": -145.05000000000018,
+          "r_multiple": -15.44141129952105
+        }
+      },
+      "resolved": true
+    }
+  ],
+  "trade_journal": {
+    "by_setup": {},
+    "by_session": {},
+    "by_regime": {}
+  },
+  "daily_pnl": 0.0,
+  "daily_loss": 0.0,
+  "daily_wins": 0,
+  "daily_losses": 0,
+  "max_drawdown": 0.0,
+  "last_signal": {
+    "direction": "BUY",
+    "score": 6.3,
+    "confidence": "MEDIUM",
+    "timestamp": "2026-06-01T21:00:08.144736"
+  },
+  "last_entry_time": "2026-06-01T19:15:05.091513",
+  "directional_trade_streak": {
+    "direction": "SELL",
+    "count": 1,
+    "updated_at": "2026-06-01T19:15:05.091513"
+  },
+  "consecutive_losses": 0,
+  "session_state": "RUNNING"
+}
