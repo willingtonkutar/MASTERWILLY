@@ -99,8 +99,8 @@ class InstitutionalStrategyEngine:
 
     def _build_mtf_context(self, primary_df):
         higher_tfs = ["D1", "H4", "H1", "M15"]
-        zone_tfs = ["H1", "M15"]
-        entry_tfs = ["M5", "M3", "M1"]
+        zone_tfs = ["H1", "M15", "M5"]
+        entry_tfs = ["M5", "M3", "M2", "M1"]
 
         higher = {tf: self._fetch_timeframe_df(tf, primary_df) for tf in higher_tfs}
         zones = {tf: higher[tf] if tf in higher else self._fetch_timeframe_df(tf, primary_df) for tf in zone_tfs}
@@ -138,11 +138,11 @@ class InstitutionalStrategyEngine:
 
         breakdown = {
             "trend_alignment": 2 if decision.details.get("trend_bias") == decision.direction else 0,
-            "structure": 4 if decision.order_block and decision.fair_value_gap else 0,
+            "structure": float(decision.details.get("zone_score", 0) or 0),
             "liquidity": 3 if decision.liquidity_zone else 0,
             "momentum": 0,
             "volatility": 0,
-            "confirmation": 3 if any("confirmed" in reason or "formed" in reason for reason in decision.reasons) else 0,
+            "confirmation": float((decision.details.get("entry_confirmation") or {}).get("score", 0) or 0),
         }
         if direction == "SELL":
             breakdown = {key: -value for key, value in breakdown.items()}
@@ -166,6 +166,9 @@ class InstitutionalStrategyEngine:
                 "details": decision.details,
             },
             "point_of_interest": poi,
+            "zone_stack": decision.details.get("watched_zones", []),
+            "primary_zone": decision.details.get("primary_zone"),
+            "entry_confirmation": decision.details.get("entry_confirmation"),
             "structure_analysis": {
                 "D1": {"trend": self._safe_trend_label(higher.get("D1"))},
                 "H4": {"trend": self._safe_trend_label(higher.get("H4"))},

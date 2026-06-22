@@ -16,6 +16,7 @@ from ai.claude import analyze_market_context, refine_signal
 from monitoring.logger import log_event
 from monitoring.telegram_notifier import escape_telegram_html, send_telegram_signal, telegram_is_configured
 from monitoring.startup_reporter import run_startup_analysis
+from monitoring.setup_watch_notifier import SetupWatchNotifier
 from main import (
     calculate_indicators,
     get_last_candle_key,
@@ -68,6 +69,26 @@ def format_signal_message(signal, market_context, regime_data, entry_price, sl, 
         trade_quality = "MODERATE"
 
     protection_text = ", ".join(str(item) for item in (protection_labels or [])) if protection_labels else "NONE"
+    zone_stack = signal.get("zone_stack") or []
+    tapped_zones = [zone for zone in zone_stack if zone.get("tapped")]
+    display_zones = tapped_zones[:4] or zone_stack[:4]
+    if display_zones:
+        zone_text = "\n".join(
+            "• "
+            f"{zone.get('timeframe')} {zone.get('type')} "
+            f"{float(zone.get('bottom', 0.0) or 0.0):.2f}-{float(zone.get('top', 0.0) or 0.0):.2f} "
+            f"score {float(zone.get('score', 0.0) or 0.0):.1f}"
+            for zone in display_zones
+        )
+    else:
+        zone_text = "• No active POI stack found"
+
+    entry_confirmation = signal.get("entry_confirmation") or {}
+    entry_confirmation_text = (
+        f"{entry_confirmation.get('timeframe')} {entry_confirmation.get('type')} "
+        f"score {float(entry_confirmation.get('score', 0.0) or 0.0):.1f}"
+        if entry_confirmation else "N/A"
+    )
 
     message = f"""
 🔔 NEW {symbol_label} SIGNAL 🔔
@@ -97,6 +118,12 @@ def format_signal_message(signal, market_context, regime_data, entry_price, sl, 
 • Correlation Score: {correlation_score:+.2f}
 • Trade Quality: {escape_telegram_html(trade_quality)}
 """.strip()
+
+    message += (
+        "\n\nZONES FOUND:\n"
+        f"{escape_telegram_html(zone_text)}\n"
+        f"ENTRY CONFIRMATION: {escape_telegram_html(entry_confirmation_text)}"
+    )
 
     if execution_cooldown_label:
         message += f"\n• Execution Cooldown: {escape_telegram_html(execution_cooldown_label)}"
@@ -198,6 +225,7 @@ def run_signal_bot():
     risk = RiskManager()
     state = StateManager()
     strategy = InstitutionalStrategyEngine()
+    watch_notifier = SetupWatchNotifier()
     regime = RegimeDetector()
     smc = SMCAnalyzer()
     data_validator = DataValidator()
@@ -321,6 +349,16 @@ def run_signal_bot():
                 last_structure_key = structure_key
                 time.sleep(config.MONITOR_INTERVAL)
                 continue
+
+            watch_signal = strategy.calculate_institutional_score(
+                df,
+                smc_data=smc_data,
+                regime=regime_data,
+                recent_sweeps=recent_sweep_history,
+            )
+            watch_signal["session"] = session_policy.get("session_tag")
+            watch_signal["regime"] = regime_data.get("regime")
+            watch_notifier.process(watch_signal, candle_key=candle_key, mode="signal")
 
             signal = strategy.detect_signal(
                 df,

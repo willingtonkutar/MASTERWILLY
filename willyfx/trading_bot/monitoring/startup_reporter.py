@@ -66,6 +66,30 @@ def _format_claude_block(claude_context):
     )
 
 
+def _format_zone_stack(zones):
+    if not zones:
+        return "No active POI stack found."
+
+    lines = []
+    for zone in zones[:6]:
+        flags = []
+        if zone.get("tapped"):
+            flags.append("tapped")
+        if zone.get("has_fvg_overlap"):
+            flags.append("FVG overlap")
+        if zone.get("has_fvg_in_front"):
+            flags.append("FVG in front")
+        if zone.get("nested_inside"):
+            flags.append(f"inside {'/'.join(str(item) for item in zone.get('nested_inside'))}")
+        flag_text = f" ({', '.join(flags)})" if flags else ""
+        lines.append(
+            f"- {zone.get('timeframe')} {str(zone.get('side', '')).upper()} {zone.get('type')}: "
+            f"{_format_level(zone.get('bottom'))}-{_format_level(zone.get('top'))} "
+            f"score {float(zone.get('score', 0.0) or 0.0):.1f}{flag_text}"
+        )
+    return "\n".join(lines)
+
+
 def build_startup_report(strategy_signal):
     """
     Builds the XAUUSD Smart Money Report from the strategy signal.
@@ -83,6 +107,7 @@ def build_startup_report(strategy_signal):
     reasons = strategy_signal.get("reasons") or []
     htf_analysis = strategy_signal.get("structure_analysis", {}) or {}
     poi = strategy_signal.get("point_of_interest", {}) or {}
+    zone_stack = strategy_signal.get("zone_stack") or []
 
     trend_lines = []
     for timeframe in ("D1", "H4", "H1", "M15", "M5"):
@@ -127,6 +152,9 @@ HIGHER TIMEFRAMES:
 
 CURRENT POINT OF INTEREST:
 {poi_text}
+
+ZONE STACK WATCHLIST:
+{_format_zone_stack(zone_stack)}
 
 WHAT THE BOT IS CHECKING:
 {reasons_text}

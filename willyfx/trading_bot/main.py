@@ -21,6 +21,7 @@ from ai.claude import analyze_market_context, refine_signal, get_session_usage_s
 from monitoring.logger import log_event
 from monitoring.telegram_notifier import send_telegram_signal, escape_telegram_html, telegram_is_configured
 from monitoring.startup_reporter import run_startup_analysis
+from monitoring.setup_watch_notifier import SetupWatchNotifier
 import config
 
 
@@ -2195,6 +2196,26 @@ def format_execution_trade_message(
     slippage = float(executed_price or 0.0) - float(entry_price or 0.0)
     quality = decision_validation.get("trade_quality", "UNKNOWN") if isinstance(decision_validation, dict) else "UNKNOWN"
     session_tag = str(session_policy.get("session_tag", "UNKNOWN")).replace("_", " ") if isinstance(session_policy, dict) else "UNKNOWN"
+    zone_stack = signal.get("zone_stack") or []
+    tapped_zones = [zone for zone in zone_stack if zone.get("tapped")]
+    display_zones = tapped_zones[:4] or zone_stack[:4]
+    if display_zones:
+        zone_text = "\n".join(
+            "- "
+            f"{zone.get('timeframe')} {zone.get('type')} "
+            f"{float(zone.get('bottom', 0.0) or 0.0):.2f}-{float(zone.get('top', 0.0) or 0.0):.2f} "
+            f"score {float(zone.get('score', 0.0) or 0.0):.1f}"
+            for zone in display_zones
+        )
+    else:
+        zone_text = "- No active POI stack found"
+
+    entry_confirmation = signal.get("entry_confirmation") or {}
+    entry_confirmation_text = (
+        f"{entry_confirmation.get('timeframe')} {entry_confirmation.get('type')} "
+        f"score {float(entry_confirmation.get('score', 0.0) or 0.0):.1f}"
+        if entry_confirmation else "N/A"
+    )
 
     message = f"""
 ✅ EXECUTED {escape_telegram_html(symbol_label)} TRADE
@@ -2239,6 +2260,12 @@ def format_execution_trade_message(
 • Validation: {escape_telegram_html(validation_text)}
 • Observation: {escape_telegram_html(observation_text)}
 """.strip()
+
+    message += (
+        "\n\nZONES FOUND:\n"
+        f"{escape_telegram_html(zone_text)}\n"
+        f"ENTRY CONFIRMATION: {escape_telegram_html(entry_confirmation_text)}"
+    )
 
     return message
 
@@ -2319,6 +2346,7 @@ def main():
     state = StateManager()
     engine = ExecutionEngine()
     strategy = InstitutionalStrategyEngine()
+    watch_notifier = SetupWatchNotifier()
     regime = RegimeDetector()
     smc = SMCAnalyzer()
     exit_engine = SmartExitEngine()
@@ -2556,6 +2584,16 @@ def main():
             # PHASE 6: INSTITUTIONAL STRATEGY ENGINE
             # ================================================================
             
+            watch_signal = strategy.calculate_institutional_score(
+                df,
+                smc_data=smc_data,
+                regime=regime_data,
+                recent_sweeps=recent_sweep_history,
+            )
+            watch_signal["session"] = session_policy.get("session_tag")
+            watch_signal["regime"] = regime_data.get("regime")
+            watch_notifier.process(watch_signal, candle_key=candle_key, mode="execution")
+
             signal = strategy.detect_signal(
                 df,
                 smc_data=smc_data,
