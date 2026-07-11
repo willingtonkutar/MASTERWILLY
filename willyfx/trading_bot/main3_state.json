@@ -1,0 +1,52 @@
+{
+  "last_report_signature": "b1d5b116b26b97401d7061988eab260ee264e88962193e2bc848058b2e324540",
+  "last_15m_candle_key": "1783711800",
+  "overall": "bearish",
+  "focus_15m": {
+    "direction": "bearish",
+    "primary_liquidity": {
+      "type": "asian_low",
+      "price": 4054.08
+    },
+    "reversal_liquidity": {
+      "type": "invalidation",
+      "price": 4109.0
+    },
+    "invalidation_level": {
+      "type": "structural_swing_high",
+      "price": 4108.95
+    }
+  },
+  "per_tf": {
+    "daily": {
+      "direction": "bearish"
+    },
+    "4h": {
+      "direction": "slight_bullish"
+    },
+    "15m": {
+      "direction": "bearish"
+    }
+  },
+  "recommendation": "SELL ONLY",
+  "confidence": 86,
+  "market_control": {
+    "daily": {
+      "side": "Sellers",
+      "phrase": "Sellers in control",
+      "reason": "price below EMA20 and EMA50"
+    },
+    "4h": {
+      "side": "Buyers",
+      "phrase": "Buyers correcting",
+      "reason": "swing highs and lows are rising"
+    },
+    "15m": {
+      "side": "Sellers",
+      "phrase": "Sellers correcting",
+      "reason": "swept above 4108.95 and rejected back below"
+    },
+    "overall": "Only look for sells."
+  },
+  "timestamp": "2026-07-10 16:59 UTC"
+}

@@ -59,6 +59,10 @@ class TimeframeAnalyzer:
 
         ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
         ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+        ema20_prev = close.ewm(span=20, adjust=False).mean().shift(1).iloc[-1] if len(close) > 1 else ema20
+        ema50_prev = close.ewm(span=50, adjust=False).mean().shift(1).iloc[-1] if len(close) > 1 else ema50
+        ema_distance_pct = abs(current - ema20) / current * 100 if current else 0.0
+        ema_slope_pct = (abs(float(ema20 - ema20_prev)) + abs(float(ema50 - ema50_prev))) / current * 100 if current else 0.0
 
         delta = close.diff().fillna(0)
         up = delta.clip(lower=0).rolling(14).mean().iloc[-1]
@@ -142,22 +146,98 @@ class TimeframeAnalyzer:
         else:
             direction = 'neutral'
 
-        confidence = min(100, max(0, 45 + abs(score) * 12))
+        if str(timeframe or '').lower() in {'15m', 'm15'} and direction.startswith('slight_'):
+            direction = 'bullish' if score > 0 else 'bearish' if score < 0 else 'neutral'
+
+        confidence = 42 + abs(score) * 10
+        confidence += min(14, ema_distance_pct * 8)
+        confidence += min(14, ema_slope_pct * 120)
+        if structure_reason != 'balanced':
+            confidence += 6
+        confidence = min(100, max(0, int(round(confidence))))
 
         primary_liquidity = None
         reversal_liquidity = None
         execution_guidance = None
+        target_plan = None
+        invalidation_level = None
         if liquidity_model:
             levels = liquidity_model.get('levels') or []
             level_prices = [float(level.get('price')) for level in levels if level.get('price') is not None]
-            if direction == 'bullish':
-                target_price = self._nearest_level(level_prices, current, above=True)
-                reversal_price = self._nearest_level(level_prices, current, above=False)
+            direction_key = direction.replace('slight_', '')
+            session_ranges = liquidity_model.get('session_ranges') or {}
+
+            def _pick_by_priority(direction_side):
+                if direction_side == 'bullish':
+                    preferred = [
+                        'asian_high',
+                        'current_session_high',
+                        'current_day_high',
+                        'previous_session_high',
+                        'previous_day_high',
+                        'psychological',
+                    ]
+                    next_down = [
+                        'asian_low',
+                        'current_session_low',
+                        'current_day_low',
+                        'previous_session_low',
+                        'previous_day_low',
+                    ]
+                    above = self._nearest_level(level_prices, current, above=True)
+                    below = self._nearest_level(level_prices, current, above=False)
+                else:
+                    preferred = [
+                        'asian_low',
+                        'current_session_low',
+                        'current_day_low',
+                        'previous_session_low',
+                        'previous_day_low',
+                        'psychological',
+                    ]
+                    next_down = [
+                        'asian_high',
+                        'current_session_high',
+                        'current_day_high',
+                        'previous_session_high',
+                        'previous_day_high',
+                    ]
+                    above = self._nearest_level(level_prices, current, above=True)
+                    below = self._nearest_level(level_prices, current, above=False)
+
+                def _match_type(type_name):
+                    match = next((level for level in levels if level.get('type') == type_name), None)
+                    if match:
+                        return {'type': match.get('type'), 'price': float(match.get('price'))}
+                    return None
+
+                for type_name in preferred:
+                    if type_name == 'psychological':
+                        price = above if direction_side == 'bullish' else below
+                        if price is not None:
+                            return {'type': 'psychological', 'price': float(price)}
+                        continue
+                    named = _match_type(type_name)
+                    if named is not None:
+                        if direction_side == 'bullish' and named['price'] > current:
+                            return named
+                        if direction_side == 'bearish' and named['price'] < current:
+                            return named
+
+                return {'type': 'liquidity_level', 'price': float(above if direction_side == 'bullish' else below)} if (above if direction_side == 'bullish' else below) is not None else None
+
+            if direction_key == 'bullish':
+                target_price = _pick_by_priority('bullish')
+                reversal_price = {'type': 'invalidation', 'price': float(below)} if (below := self._nearest_level(level_prices, current, above=False)) is not None else None
                 execution_guidance = 'look for buys on the 1-minute timeframe'
-            elif direction == 'bearish':
-                target_price = self._nearest_level(level_prices, current, above=False)
-                reversal_price = self._nearest_level(level_prices, current, above=True)
+                target_plan = 'buy-side liquidity'
+                invalidation_level = {'type': 'structural_swing_low', 'price': float(recent_swing_low)}
+            elif direction_key == 'bearish':
+                target_price = _pick_by_priority('bearish')
+                reversal_price = {'type': 'invalidation', 'price': float(above)} if (above := self._nearest_level(level_prices, current, above=True)) is not None else None
                 execution_guidance = 'look for sells on the 1-minute timeframe'
+                target_plan = 'sell-side liquidity'
+                invalidation_level = {'type': 'structural_swing_high', 'price': float(recent_swing_high)}
             else:
                 target_price = None
                 reversal_price = None
@@ -165,6 +245,8 @@ class TimeframeAnalyzer:
             def _pick_label(price):
                 if price is None:
                     return None
+                if isinstance(price, dict):
+                    return price
                 match = next((level for level in levels if abs(float(level.get('price', 0)) - price) < 1e-9), None)
                 if match:
                     return {"type": match.get('type'), "price": float(match.get('price'))}
@@ -197,4 +279,6 @@ class TimeframeAnalyzer:
             "primary_liquidity": primary_liquidity,
             "reversal_liquidity": reversal_liquidity,
             "execution_guidance": execution_guidance,
+            "target_plan": target_plan,
+            "invalidation_level": invalidation_level,
         }

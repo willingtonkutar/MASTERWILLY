@@ -29,7 +29,7 @@ class LiquidityMapper:
 
     @staticmethod
     def _to_frame(rates):
-        if not rates:
+        if rates is None or len(rates) == 0:
             return pd.DataFrame()
         df = pd.DataFrame(rates).copy()
         if 'time' in df.columns:
@@ -50,6 +50,7 @@ class LiquidityMapper:
             return {
                 'session': 'UNKNOWN',
                 'levels': [],
+                'session_ranges': {},
                 'current_session': None,
                 'previous_session': None,
                 'current_day': None,
@@ -63,6 +64,16 @@ class LiquidityMapper:
 
         df['date'] = df['time'].dt.normalize()
         df['session'] = df['time'].apply(lambda ts: self.detect_session(ts.timestamp()) if pd.notna(ts) else 'UNKNOWN')
+
+        session_ranges = {}
+        for session_name, session_df in df.groupby('session'):
+            if session_df.empty:
+                continue
+            session_ranges[session_name] = {
+                'name': session_name,
+                'high': float(session_df['high'].max()),
+                'low': float(session_df['low'].min()),
+            }
 
         current_day_df = df[df['date'] == current_day]
         previous_day_df = df[df['date'] == previous_day]
@@ -106,6 +117,10 @@ class LiquidityMapper:
             _append_level(f'{previous_session.lower()}_high', previous_session_df['high'].max(), 'above', 'session')
             _append_level(f'{previous_session.lower()}_low', previous_session_df['low'].min(), 'below', 'session')
 
+        for session_name, session_range in session_ranges.items():
+            _append_level(f'{session_name.lower()}_high', session_range['high'], 'above', 'session')
+            _append_level(f'{session_name.lower()}_low', session_range['low'], 'below', 'session')
+
         for level in self.psychological_levels(current_price):
             _append_level('psychological', level, 'both', 'round_number')
 
@@ -133,6 +148,7 @@ class LiquidityMapper:
                 'high': float(previous_session_df['high'].max()) if not previous_session_df.empty else None,
                 'low': float(previous_session_df['low'].min()) if not previous_session_df.empty else None,
             },
+            'session_ranges': session_ranges,
             'levels': levels,
             'nearest_above': above[0] if above else None,
             'nearest_below': below[0] if below else None,

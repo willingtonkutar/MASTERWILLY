@@ -18,6 +18,8 @@ class FairValueGap:
     detected_index: int
     top: float
     bottom: float
+    consequent_encroached: bool
+    consequent_index: int | None
     mitigated: bool
     mitigated_index: int | None
 
@@ -65,10 +67,10 @@ def detect_fair_value_gaps(
         )
 
         if bullish:
-            gap = FairValueGap("bullish", index - 2, index, low, high_two_back, False, None)
+            gap = FairValueGap("bullish", index - 2, index, low, high_two_back, False, None, False, None)
             gaps.append(_with_mitigation(candles, gap, index + 1))
         elif bearish:
-            gap = FairValueGap("bearish", index - 2, index, low_two_back, high, False, None)
+            gap = FairValueGap("bearish", index - 2, index, low_two_back, high, False, None, False, None)
             gaps.append(_with_mitigation(candles, gap, index + 1))
 
     return gaps if include_mitigated else [gap for gap in gaps if not gap.mitigated]
@@ -86,7 +88,8 @@ def latest_unmitigated_fvgs(
         auto_threshold=auto_threshold,
         include_mitigated=False,
     )
-    return gaps if limit <= 0 else gaps[-limit:]
+    active_gaps = [gap for gap in gaps if not gap.consequent_encroached]
+    return active_gaps if limit <= 0 else active_gaps[-limit:]
 
 
 def _validate_input(data: pd.DataFrame, threshold_percent: float) -> None:
@@ -100,11 +103,21 @@ def _validate_input(data: pd.DataFrame, threshold_percent: float) -> None:
 
 
 def _with_mitigation(candles: pd.DataFrame, gap: FairValueGap, start_index: int) -> FairValueGap:
+    midpoint = gap.bottom + ((gap.top - gap.bottom) / 2)
     for candle_index in range(start_index, len(candles)):
+        high = float(candles.at[candle_index, "high"])
+        low = float(candles.at[candle_index, "low"])
         close = float(candles.at[candle_index, "close"])
+
+        if not gap.consequent_encroached:
+            if gap.side == "bullish" and low <= midpoint:
+                gap = FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, True, candle_index, gap.mitigated, gap.mitigated_index)
+            elif gap.side == "bearish" and high >= midpoint:
+                gap = FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, True, candle_index, gap.mitigated, gap.mitigated_index)
+
         if gap.side == "bullish" and close < gap.bottom:
-            return FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, True, candle_index)
+            return FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, gap.consequent_encroached, gap.consequent_index, True, candle_index)
         if gap.side == "bearish" and close > gap.top:
-            return FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, True, candle_index)
+            return FairValueGap(gap.side, gap.start_index, gap.detected_index, gap.top, gap.bottom, gap.consequent_encroached, gap.consequent_index, True, candle_index)
     return gap
 
