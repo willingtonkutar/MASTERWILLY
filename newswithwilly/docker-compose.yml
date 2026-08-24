@@ -1,0 +1,66 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      APP_NAME: ${APP_NAME:-newswithwilly}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-/app/logs/newswithwilly.log}
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/newswithwilly.db}
+      SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL:-sqlite:////app/data/scheduler.db}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      KEYWORDS: ${KEYWORDS:-iran,war,tariff,bomb,cpi,fed,rates,dxy,gold}
+      IMPACT_THRESHOLD: ${IMPACT_THRESHOLD:-7}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-10}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
+      CLAUDE_TIMEOUT_SECONDS: ${CLAUDE_TIMEOUT_SECONDS:-30}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_THREAD_ID: ${TELEGRAM_THREAD_ID:-}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN:-}
+      TWITTER_HANDLES: ${TWITTER_HANDLES:-}
+    volumes:
+      - logs:/app/logs
+      - app_data:/app/data
+    stop_grace_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    profiles: ["production"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-newswithwilly}
+      POSTGRES_USER: ${POSTGRES_USER:-newswithwilly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env for production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["production"]
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  logs:
+  app_data:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,18 @@
+[
+  {
+    "source": "twitter",
+    "headline": "Fed signals rates may remain elevated",
+    "content": "Market commentary",
+    "url": "https://example.test/status/1",
+    "timestamp": "2026-08-24T12:00:00+00:00",
+    "keywords": ["fed", "rates"],
+    "asset_mentions": ["XAUUSD", "DXY"]
+  },
+  {
+    "source": "forexfactory",
+    "headline": "US CPI release",
+    "timestamp": "2026-08-24T12:30:00+00:00",
+    "keywords": ["cpi"],
+    "asset_mentions": ["XAUUSD", "DXY"]
+  }
+]
