@@ -33,6 +33,18 @@ def test_analyzer_parses_structured_response_and_tracks_cost():
     assert analyzer.cost_metrics().input_tokens == 100
 
 
+def test_analyzer_accepts_json_followed_by_claude_explanation():
+    response = SimpleNamespace(
+        content=[SimpleNamespace(text='{"asset":"XAUUSD","sentiment":"NEUTRAL","impact_score":4,"action":"HOLD","reasoning":"Limited market impact."}\nThis is a low-confidence result.')]
+    )
+    analyzer = ClaudeAnalyzer(client=SimpleNamespace(messages=FakeMessages(response)), max_retries=1)
+
+    result = analyzer.analyze_event(event())
+
+    assert result.impact_score == 4
+    assert result.reasoning == "Limited market impact."
+
+
 def test_analyzer_returns_neutral_fallback_without_client():
     result = ClaudeAnalyzer(api_key=None).analyze_event(event())
 

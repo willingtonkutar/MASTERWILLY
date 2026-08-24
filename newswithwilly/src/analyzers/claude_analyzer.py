@@ -101,7 +101,13 @@ class ClaudeAnalyzer:
     def _parse_response(response: Any) -> dict[str, Any]:
         content = response.content[0].text if getattr(response, "content", None) else ""
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.IGNORECASE)
-        payload = json.loads(content)
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            start = content.find("{")
+            if start < 0:
+                raise
+            payload, _ = json.JSONDecoder().raw_decode(content[start:])
         required = {"asset", "sentiment", "impact_score", "action", "reasoning"}
         if not required.issubset(payload):
             raise ValueError("Claude response is missing required fields")
