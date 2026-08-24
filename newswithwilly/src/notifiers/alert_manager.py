@@ -84,8 +84,22 @@ class AlertManager:
             self._recent_headlines[headline_key] = now
             self._asset_sent_at[analysis.asset.upper()] = now
             self._sent_times.append(now)
+            logger.info(
+                "Telegram alert sent | priority=%s asset=%s impact=%d headline=%s",
+                priority,
+                analysis.asset,
+                analysis.impact_score,
+                event.headline,
+            )
             alert = alert.model_copy(update={"status": "sent", "sent_at": sent_at})
             return AlertDecision(priority, alert, True, "alert sent")
+        logger.error(
+            "Telegram alert failed | priority=%s asset=%s impact=%d headline=%s",
+            priority,
+            analysis.asset,
+            analysis.impact_score,
+            event.headline,
+        )
         alert = alert.model_copy(update={"status": "failed"})
         return AlertDecision(priority, alert, False, "Telegram delivery failed")
 
@@ -116,6 +130,8 @@ class AlertManager:
         return False
 
     def _is_asset_cooling_down(self, asset: str, now: datetime) -> bool:
+        if self.asset_cooldown <= timedelta(0):
+            return False
         previous = self._asset_sent_at.get(asset.upper())
         return previous is not None and now - previous <= self.asset_cooldown
 

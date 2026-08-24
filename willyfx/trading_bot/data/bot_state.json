@@ -1,7 +1,42 @@
 {
   "session_start": "2026-06-01T18:59:19.967835",
   "today_date": "2026-06-22",
-  "open_trades": [],
+  "open_trades": [
+    {
+      "ticket": 9205808067,
+      "symbol": "XAUUSD",
+      "direction": "SELL",
+      "entry_price": 4183.7,
+      "lot": 0.01,
+      "sl": 4195.5775,
+      "initial_sl": 4195.5775,
+      "tp": 4161.2845,
+      "open_time": "2026-06-22T21:00:06.971372",
+      "status": "OPEN",
+      "trailing_active": false,
+      "entry_conditions": {
+        "score": -26.5,
+        "confidence": "MEDIUM",
+        "regime": "TREND",
+        "session": "NEW_YORK",
+        "setup_tag": "SELL|HIGH|SWEEP|NO_BOS|NO_CHOCH",
+        "reasons": [
+          "Higher-timeframe bias is bearish",
+          "D1 trend is bearish",
+          "H4 trend is bearish",
+          "H1 trend is bearish",
+          "M15 trend is bearish",
+          "Price tapped POI stack worth 14.5 points",
+          "H1 mitigated bearish OB at 4200.90-4212.70, led to BOS, overlaps FVG, has FVG in front",
+          "M15 bearish FVG zone found at 4190.43-4194.76",
+          "M15 bearish FVG zone found at 4184.91-4186.07",
+          "M15 liquidity sweep detected",
+          "M3 CHOCH formed and retested in bearish direction"
+        ],
+        "entry_timestamp": "2026-06-22T21:00:06.971372"
+      }
+    }
+  ],
   "closed_trades": [],
   "rejected_trades": [
     {
@@ -50,16 +85,16 @@
   "daily_losses": 0,
   "max_drawdown": 0.0,
   "last_signal": {
-    "direction": "BUY",
-    "score": 6.3,
+    "direction": "SELL",
+    "score": -26.5,
     "confidence": "MEDIUM",
-    "timestamp": "2026-06-01T21:00:08.144736"
+    "timestamp": "2026-06-22T21:00:06.713575"
   },
-  "last_entry_time": "2026-06-01T19:15:05.091513",
+  "last_entry_time": "2026-06-22T21:00:06.971372",
   "directional_trade_streak": {
     "direction": "SELL",
-    "count": 1,
-    "updated_at": "2026-06-01T19:15:05.091513"
+    "count": 2,
+    "updated_at": "2026-06-22T21:00:06.971372"
   },
   "consecutive_losses": 0,
   "session_state": "RUNNING"

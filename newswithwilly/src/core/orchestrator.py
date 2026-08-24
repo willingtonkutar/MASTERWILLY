@@ -110,6 +110,7 @@ class Orchestrator:
             logger.warning("Event queue is full; applying backpressure to %s", event.headline)
             return False
         self._increment("queued_events")
+        logger.info("News queued | source=%s priority=%d headline=%s", event.source, event_priority, event.headline)
         return True
 
     def forex_news_check(self) -> int:
@@ -120,6 +121,8 @@ class Orchestrator:
                 continue
             if self.news_monitor.claim_new_story(event) and self.submit_event(event):
                 queued += 1
+        if queued:
+            logger.info("Regular news check queued %d new story(s)", queued)
         return queued
 
     def critical_news_check(self) -> int:
@@ -128,6 +131,8 @@ class Orchestrator:
         for event in self.news_monitor.get_critical_news():
             if self.news_monitor.claim_new_story(event) and self.submit_event(event, bypass_filter=True, priority=10):
                 queued += 1
+        if queued:
+            logger.info("Critical news check queued %d high-priority story(s)", queued)
         return queued
 
     def wait(self) -> None:

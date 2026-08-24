@@ -96,6 +96,8 @@ class TelegramNotifier:
                 )
                 if response.ok and response.json().get("ok", True):
                     self._last_send_at = time.monotonic()
+                    message_id = response.json().get("result", {}).get("message_id")
+                    logger.info("Telegram delivery accepted%s", f" (message_id={message_id})" if message_id is not None else "")
                     return True
                 logger.warning("Telegram rejected alert (%d/%d): %s", attempt, self.max_retries, response.text[:200])
             except requests.RequestException as exc:
