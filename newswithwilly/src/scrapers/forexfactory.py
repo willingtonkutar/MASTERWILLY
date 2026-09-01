@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import itertools
+import json
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as time_type, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any, Callable, Iterable
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from zoneinfo import ZoneInfo
@@ -80,9 +82,13 @@ class ForexFactoryScraper:
         headers: Iterable[dict[str, str]] | None = None,
         session: requests.Session | None = None,
         event_queue: Any | None = None,
+        seen_state_file: str | Path | None = None,
+        max_seen_items: int = 5000,
     ) -> None:
         if cache_seconds < 0 or check_interval_seconds < 1 or max_retries < 1 or timeout_seconds < 1:
             raise ValueError("cache/check intervals, retries, and timeout must be positive")
+        if max_seen_items < 1:
+            raise ValueError("max_seen_items must be positive")
         try:
             self.local_timezone = ZoneInfo(timezone_name)
         except Exception as exc:
@@ -100,7 +106,10 @@ class ForexFactoryScraper:
         self._cache_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._scheduler_thread: threading.Thread | None = None
-        self.seen_events: dict[str, str | None] = {}
+        self._seen_state_file = Path(seen_state_file) if seen_state_file else None
+        self._max_seen_items = max_seen_items
+        self._seen_lock = threading.Lock()
+        self.seen_events: dict[str, str | None] = self._load_seen_events()
 
     def get_weekly_calendar(self, *, force_refresh: bool = False) -> list[ForexFactoryEvent]:
         """Fetch, parse, and cache this week's calendar."""
@@ -129,19 +138,50 @@ class ForexFactoryScraper:
             if (now <= event.timestamp <= now + window) or (event.timestamp < now and event.actual)
         ]
         new_events = []
+        dirty = False
         for event in events:
             event_key = str(event.id)
             signature = event.actual
-            if self.seen_events.get(event_key, object()) == signature:
-                continue
-            self.seen_events[event_key] = signature
+            with self._seen_lock:
+                if self.seen_events.get(event_key, object()) == signature:
+                    continue
+                self.seen_events[event_key] = signature
+                dirty = True
             new_events.append(event)
             if self._event_queue is not None:
                 try:
                     self._event_queue.put(event.to_news_event(), impact_score=event.impact_score)
                 except Exception:
                     logger.exception("Failed to enqueue Forex Factory event: %s", event.name)
+        if dirty:
+            self._persist_seen_events()
         return new_events
+
+    def _load_seen_events(self) -> dict[str, str | None]:
+        if self._seen_state_file is None or not self._seen_state_file.exists():
+            return {}
+        try:
+            data = json.loads(self._seen_state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("Failed to load persisted calendar seen-state from %s", self._seen_state_file)
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {str(key): (None if value is None else str(value)) for key, value in data.items() if key}
+
+    def _persist_seen_events(self) -> None:
+        if self._seen_state_file is None:
+            return
+        try:
+            self._seen_state_file.parent.mkdir(parents=True, exist_ok=True)
+            items = list(self.seen_events.items())
+            if len(items) > self._max_seen_items:
+                items = items[-self._max_seen_items :]
+                self.seen_events = dict(items)
+            payload = {key: value for key, value in items}
+            self._seen_state_file.write_text(json.dumps(payload), encoding="utf-8")
+        except OSError:
+            logger.warning("Failed to persist calendar seen-state to %s", self._seen_state_file)
 
     def start_scheduled_checks(self) -> None:
         """Start periodic checks in a daemon thread."""

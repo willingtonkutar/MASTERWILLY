@@ -62,9 +62,15 @@ class Orchestrator:
         self.keyword_filter = keyword_filter or KeywordFilter()
         self.analyzer = analyzer or ClaudeAnalyzer()
         self.alert_manager = alert_manager or AlertManager(TelegramNotifier())
-        self.forex_factory = forex_factory or ForexFactoryScraper(event_queue=self.event_queue)
+        self.forex_factory = forex_factory or ForexFactoryScraper(
+            event_queue=self.event_queue,
+            seen_state_file="logs/forexfactory_calendar_seen.json",
+        )
         self.twitter_monitor = twitter_monitor
-        self.news_monitor = news_monitor or ForexFactoryNewsScraper(event_queue=self.event_queue)
+        self.news_monitor = news_monitor or ForexFactoryNewsScraper(
+            event_queue=self.event_queue,
+            seen_state_file="logs/forexfactory_news_seen.json",
+        )
         self.enable_forex_news = enable_forex_news
         self._executor = ThreadPoolExecutor(max_workers=executor_workers, thread_name_prefix="pipeline")
         self._processors = [EventProcessor(self.event_queue, self._process_queued_event) for _ in range(worker_count)]
@@ -176,6 +182,14 @@ class Orchestrator:
 
     def _analyze_and_alert(self, event: NewsEvent) -> None:
         analysis = self.analyzer.analyze_event(event)
+        logger.info(
+            "Claude analysis | asset=%s sentiment=%s impact=%d action=%s reasoning=%s",
+            analysis.asset,
+            analysis.sentiment,
+            analysis.impact_score,
+            analysis.action,
+            (analysis.reasoning[:180] + "...") if len(analysis.reasoning) > 180 else analysis.reasoning,
+        )
         asyncio.run(self.alert_manager.process_analysis(analysis, event))
 
     def _install_signal_handlers(self) -> None:

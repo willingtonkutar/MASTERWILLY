@@ -26,6 +26,8 @@ class Settings:
     critical_news_check_interval: int
     enable_forex_news: bool
     event_process_window_hours: int
+    alert_dedupe_minutes: int
+    alert_dedupe_state_file: Path
 
     @classmethod
     def from_environment(cls, env_file: str | Path | None = ".env") -> "Settings":
@@ -46,6 +48,7 @@ class Settings:
         critical_news_interval = _read_int("CRITICAL_NEWS_CHECK_INTERVAL", 2, minimum=1)
         enable_forex_news = _read_bool("ENABLE_FOREX_NEWS", True)
         event_window_hours = _read_int("EVENT_PROCESS_WINDOW_HOURS", 1, minimum=1)
+        alert_dedupe_minutes = _read_int("ALERT_DEDUPE_MINUTES", 1440, minimum=0)
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ConfigurationError(f"Unsupported LOG_LEVEL: {log_level}")
@@ -64,6 +67,8 @@ class Settings:
             critical_news_check_interval=critical_news_interval,
             enable_forex_news=enable_forex_news,
             event_process_window_hours=event_window_hours,
+            alert_dedupe_minutes=alert_dedupe_minutes,
+            alert_dedupe_state_file=Path(os.getenv("ALERT_DEDUPE_STATE_FILE", "logs/alert_dedupe_seen.json")),
         )
 
 

@@ -90,7 +90,11 @@ FOREX_NEWS_CHECK_INTERVAL=5
 CRITICAL_NEWS_CHECK_INTERVAL=2
 ENABLE_FOREX_NEWS=true
 EVENT_PROCESS_WINDOW_HOURS=1
+ALERT_DEDUPE_MINUTES=1440
+ALERT_DEDUPE_STATE_FILE=logs/alert_dedupe_seen.json
 ```
+
+`ALERT_DEDUPE_MINUTES` controls how long an already-sent story is suppressed across restarts. Set it to `0` to disable alert deduplication.
 
 The calendar uses adaptive polling near scheduled high-impact releases. Calendar deduplication is held in memory for the current process; an event is processed again when its actual value changes.
 

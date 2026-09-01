@@ -75,6 +75,7 @@ class SchedulerService:
         with self._lock:
             if self._started:
                 raise RuntimeError("scheduler is already running")
+            
             service_key = f"{id(self)}"
             _JOB_REGISTRY[service_key] = self
             job_args = (service_key,)
@@ -89,6 +90,15 @@ class SchedulerService:
             self._scheduler.add_job(_run_registered_job, "interval", hours=24, args=job_args + ("cleanup_old_data",), id="cleanup_old_data", replace_existing=True)
             self._scheduler.add_job(_run_registered_job, "interval", hours=1, args=job_args + ("health_check",), id="health_check", replace_existing=True)
             self._scheduler.start()
+            # Clear any stale jobs from previous runs after starting the scheduler
+            try:
+                for job in list(self._scheduler.get_jobs()):
+                    # Only keep jobs that have the current service_key in their args
+                    if not (job.args and len(job.args) > 0 and str(job.args[0]) == str(service_key)):
+                        self._scheduler.remove_job(job.id)
+                        logger.info("Removed stale job: %s", job.id)
+            except Exception as e:
+                logger.warning("Failed to clean up stale jobs: %s", e)
             if self.twitter_monitor is not None:
                 self.twitter_monitor.start(background=True)
             self._started = True

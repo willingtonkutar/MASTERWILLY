@@ -52,7 +52,12 @@ def command_run(args: argparse.Namespace, settings: Settings) -> int:
     orchestrator = Orchestrator(
         keyword_filter=KeywordFilter(settings.keywords),
         analyzer=None,
-        alert_manager=AlertManager(notifier, impact_threshold=settings.impact_threshold),
+        alert_manager=AlertManager(
+            notifier,
+            impact_threshold=settings.impact_threshold,
+            dedupe_minutes=settings.alert_dedupe_minutes,
+            seen_state_file=settings.alert_dedupe_state_file,
+        ),
         enable_forex_news=settings.enable_forex_news,
         news_interval_minutes=settings.forex_news_check_interval,
         critical_news_interval_minutes=settings.critical_news_check_interval,

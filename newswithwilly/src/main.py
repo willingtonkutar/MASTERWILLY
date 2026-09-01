@@ -50,7 +50,12 @@ def command_run(args: argparse.Namespace, settings: Settings) -> int:
     orchestrator = Orchestrator(
         keyword_filter=KeywordFilter(settings.keywords),
         analyzer=ClaudeAnalyzer(settings.anthropic_api_key),
-        alert_manager=AlertManager(notifier, impact_threshold=settings.impact_threshold),
+        alert_manager=AlertManager(
+            notifier,
+            impact_threshold=settings.impact_threshold,
+            dedupe_minutes=settings.alert_dedupe_minutes,
+            seen_state_file=settings.alert_dedupe_state_file,
+        ),
     )
     orchestrator.start()
     try:
