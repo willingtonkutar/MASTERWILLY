@@ -62,15 +62,26 @@ class ForexFactoryNewsScraper:
 
     def get_breaking_news(self) -> list[NewsEvent]:
         """Fetch current Forex Factory news blocks."""
-        response = self._session.get(self.url, headers=next(self._headers), timeout=self.timeout_seconds)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        events: list[NewsEvent] = []
-        for block in soup.select(".news-block__item"):
-            event = self._parse_block(block, response.url)
-            if event is not None:
-                events.append(event)
-        return events
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self._session.get(self.url, headers=next(self._headers), timeout=self.timeout_seconds)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                events: list[NewsEvent] = []
+                for block in soup.select(".news-block__item"):
+                    event = self._parse_block(block, response.url)
+                    if event is not None:
+                        events.append(event)
+                return events
+            except requests.RequestException as exc:
+                last_error = exc
+                logger.warning("ForexFactory news fetch failed (attempt %s/3): %s", attempt + 1, exc)
+                if attempt < 2:
+                    time.sleep(1)
+        if last_error is not None:
+            logger.warning("ForexFactory news fetch exhausted retries; returning empty result: %s", last_error)
+        return []
 
     def get_critical_news(self) -> list[NewsEvent]:
         """Return only stories with a high-impact indicator."""

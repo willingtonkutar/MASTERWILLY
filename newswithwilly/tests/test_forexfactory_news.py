@@ -1,3 +1,5 @@
+import requests
+
 from scrapers.forexfactory_news import ForexFactoryNewsScraper
 
 
@@ -47,6 +49,16 @@ def test_scraper_parses_news_and_filters_critical_stories():
     assert critical[0].headline == "Gold rises after Fed comments"
 
 
+def test_get_breaking_news_retries_after_transient_connection_error():
+    session = FailOnceSession()
+    scraper = ForexFactoryNewsScraper(session=session)
+
+    stories = scraper.get_breaking_news()
+
+    assert len(stories) == 2
+    assert session.calls == 2
+
+
 def test_check_for_updates_deduplicates_and_enqueues():
     queue = FakeQueue()
     scraper = ForexFactoryNewsScraper(session=FakeSession(), event_queue=queue)
@@ -55,6 +67,17 @@ def test_check_for_updates_deduplicates_and_enqueues():
     assert len(scraper.check_for_updates()) == 0
     assert len(queue.events) == 2
     assert queue.scores == [9, 5]
+
+
+class FailOnceSession:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, *args, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise requests.exceptions.ConnectionError("Remote end closed connection without response")
+        return FakeResponse()
 
 
 class FakeQueue:
