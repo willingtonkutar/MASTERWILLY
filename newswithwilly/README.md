@@ -35,11 +35,12 @@ tests/                Focused behavior tests
 
 The current runtime flow is:
 
-1. **Calendar ingestion** checks Forex Factory medium- and high-impact USD events and respects the configured processing window.
-2. **News ingestion** checks Forex Factory breaking news on regular and critical schedules.
-3. **Filtering** applies keyword and news-mode rules before paid analysis calls.
-4. **Analysis** sends selected events to Claude and validates structured output.
-5. **Delivery** sends qualifying alerts to Telegram with deduplication.
+1. **Calendar ingestion** refreshes the Forex Factory weekly calendar and selects medium- and high-impact USD events.
+2. **Pre-release scheduling** checks the calendar every five minutes and claims unreleased events entering the next 60-minute window. This produces the planned T-60 alert.
+3. **News ingestion** checks Forex Factory breaking news on regular and critical schedules.
+4. **Filtering** applies keyword and news-mode rules before paid analysis calls.
+5. **Analysis** sends selected events to Claude and validates structured output.
+6. **Delivery** sends qualifying alerts to Telegram with deduplication.
 
 ## Offline component validation
 
@@ -77,7 +78,23 @@ flowchart LR
 
 The database defaults to SQLite through `DATABASE_URL`. For PostgreSQL, set it to an async URL such as `postgresql+asyncpg://user:password@host/database`, then run migrations with `alembic upgrade head`.
 
-The Forex Factory calendar scraper selects high-impact USD events and only processes events within `EVENT_PROCESS_WINDOW_HOURS` of their scheduled time, or past events that have actual data. It deduplicates events by stable event ID and reprocesses an event when its actual value changes. Adaptive polling uses five minutes normally, 30 seconds near a release, five seconds during the final five minutes before a release, and 30 seconds for 15 minutes afterward. `ForexFactoryNewsScraper` reads breaking stories from `https://www.forexfactory.com/news`, deduplicates them by URL, and runs regular and critical checks using `FOREX_NEWS_CHECK_INTERVAL` and `CRITICAL_NEWS_CHECK_INTERVAL`. News mode recognizes policy, central-bank, geopolitical, intervention, bond-purchase, announcement, and surprise-event language. Explicit alert terms or multiple critical terms receive higher queue priority. Set `ENABLE_FOREX_NEWS=false` to disable news monitoring. Claude reads `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, and `CLAUDE_TIMEOUT_SECONDS`.
+The Forex Factory calendar scraper selects medium- and high-impact USD events and processes events within `EVENT_PROCESS_WINDOW_HOURS` of their scheduled time, or past events that have actual data. Adaptive polling uses five minutes normally, 30 seconds near a release, five seconds during the final five minutes before a release, and 30 seconds for 15 minutes afterward. A separate planned-calendar job runs every five minutes and selects unreleased events due within the next 60 minutes. The planned event claim is persisted in `logs/forexfactory_daily_planned_seen.json`, so repeated polling and application restarts do not resend the same T-60 alert.
+
+Calendar events retain their `previous`, `forecast`, `actual`, currency, impact level, release time, and source URL in a typed payload. The payload is persisted in the `news_events.calendar_data` column. Existing databases should run `alembic upgrade head` to apply migration `0002_calendar_event_data`.
+
+`ForexFactoryNewsScraper` reads breaking stories from `https://www.forexfactory.com/news`, deduplicates them by URL, and runs regular and critical checks using `FOREX_NEWS_CHECK_INTERVAL` and `CRITICAL_NEWS_CHECK_INTERVAL`. News mode recognizes policy, central-bank, geopolitical, intervention, bond-purchase, announcement, and surprise-event language. Explicit alert terms or multiple critical terms receive higher queue priority. Set `ENABLE_FOREX_NEWS=false` to disable news monitoring. Claude reads `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, and `CLAUDE_TIMEOUT_SECONDS`.
+
+### Calendar alert behavior
+
+Calendar alerts use a dedicated Telegram layout rather than the generic news layout:
+
+- **High impact:** gold alert header, release countdown, previous and forecast, Claude's preliminary gold bias, surprise map, trading plan, confidence, and a wait-for-actual warning.
+- **Medium impact:** shorter gold alert with previous, forecast, directional surprise map, simple plan, confidence, and a wait-for-actual warning.
+- **After release:** the actual value is included when Forex Factory publishes it, and the event may be processed again because the actual value changed.
+
+Claude is used for interpretation, not for sourcing numbers. For calendar events it receives the event name, currency, impact, release time, previous, forecast, and actual when available. It returns the preliminary sentiment, action, reasoning, impact score, and confidence. The application owns the countdown, message structure, deduplication, and calendar values.
+
+This first calendar version intentionally does not require live DXY, US10Y, or gold-price data. It does not display fabricated or unavailable market snapshots. A market-data provider can be added later as optional enrichment without changing the calendar scheduling contract.
 
 ## Configuration
 
@@ -92,11 +109,14 @@ ENABLE_FOREX_NEWS=true
 EVENT_PROCESS_WINDOW_HOURS=1
 ALERT_DEDUPE_MINUTES=1440
 ALERT_DEDUPE_STATE_FILE=logs/alert_dedupe_seen.json
+TIMEZONE_NAME=Africa/Nairobi
 ```
 
 `ALERT_DEDUPE_MINUTES` controls how long an already-sent story is suppressed across restarts. Set it to `0` to disable alert deduplication.
 
-The calendar processes medium- and high-impact USD releases, uses adaptive polling near scheduled releases, and deduplicates events in memory for the current process; an event is processed again when its actual value changes. Calendar impact only controls queue ordering; Claude's returned score controls whether Telegram sends an alert.
+`TIMEZONE_NAME` controls the calendar's local-day handling and Telegram release-time display. It defaults to `Africa/Nairobi`, so messages display release times in EAT. Calendar timestamps are stored and compared in UTC.
+
+The calendar processes medium- and high-impact USD releases, uses adaptive polling near scheduled releases, persists seen-state across restarts, and reprocesses an event when its actual value changes. Calendar impact controls queue ordering and the high/medium message template; Claude's returned score controls whether a normal queued event sends an alert. Planned calendar analysis is sent regardless of the normal impact threshold so the T-60 message is not silently dropped.
 
 ## Logging and errors
 
@@ -167,7 +187,8 @@ The container entrypoint runs `alembic upgrade head` before starting the CLI. Se
 
 ### Data models
 
-- `models.NewsEvent`: normalized input with `id`, `source`, `headline`, optional `content` and `url`, `timestamp`, `keywords`, and `asset_mentions`.
+- `models.CalendarEventData`: typed calendar payload with `currency`, `impact_level`, `previous`, `forecast`, and `actual`.
+- `models.NewsEvent`: normalized input with `id`, `source`, `headline`, optional `content` and `url`, `timestamp`, `keywords`, `asset_mentions`, and optional `calendar` data.
 - `models.AnalysisResult`: Claude output with `event_id`, `asset`, `sentiment`, `impact_score` from 1 to 10, `action`, `reasoning`, `confidence` from 0 to 1, and `analyzed_at`.
 - `models.Alert`: delivery state with `id`, `event_id`, `analysis_result_id`, `formatted_message`, optional `sent_at`, and `status` (`pending`, `sent`, or `failed`).
 
@@ -178,7 +199,7 @@ All Pydantic models expose `to_dict()`, `to_json()`, and `from_dict()`.
 | Service | Public methods |
 | --- | --- |
 | `KeywordFilter` | `pre_filter(text)`, `extract_keywords(text)`, `check_asset_mentions(text)`, `analyze(text)` |
-| `ForexFactoryScraper` | `get_weekly_calendar()`, `filter_high_impact_usd_events(events)`, `parse_event_row(row)`, `check_once()` |
+| `ForexFactoryScraper` | `get_weekly_calendar()`, `filter_medium_or_high_impact_usd_events(events)`, `get_due_planned_medium_or_high_impact_usd_events()`, `parse_event_row(row)`, `check_once()` |
 | `ForexFactoryNewsScraper` | `get_breaking_news()`, `get_critical_news()`, `check_for_updates()`, `start()`, `stop()` |
 | `ClaudeAnalyzer` | `analyze_event(event)`, `cost_metrics()` |
 | `TelegramNotifier` | `send_alert(alert)`, `send_batch(alerts)`, `format_alert_message(analysis, event)` |
