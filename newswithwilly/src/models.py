@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-Source = Literal["forexfactory", "forexfactory_news", "twitter"]
+Source = Literal["forexfactory", "forexfactory_news"]
 Sentiment = Literal["BULLISH", "BEARISH", "NEUTRAL"]
 AlertStatus = Literal["pending", "sent", "failed"]
 
@@ -43,6 +43,16 @@ class ModelBase(BaseModel):
         return cls.model_validate(data)
 
 
+class CalendarEventData(ModelBase):
+    """Economic-calendar values retained for a calendar-specific alert."""
+
+    currency: str
+    impact_level: Literal["high", "medium", "low"]
+    previous: str | None = None
+    forecast: str | None = None
+    actual: str | None = None
+
+
 class NewsEvent(ModelBase):
     """A normalized event received from a monitored news source."""
 
@@ -54,6 +64,7 @@ class NewsEvent(ModelBase):
     timestamp: datetime = Field(default_factory=_utc_now)
     keywords: list[str] = Field(default_factory=list)
     asset_mentions: list[str] = Field(default_factory=list)
+    calendar: CalendarEventData | None = None
 
     _validate_headline = field_validator("headline")(_required_text)
 

@@ -94,7 +94,7 @@ def command_scrape(args: argparse.Namespace, settings: Settings) -> int:
 def command_analyze(args: argparse.Namespace, settings: Settings) -> int:
     if not args.headline:
         raise ValueError("analyze requires a headline")
-    event = NewsEvent(source="twitter", headline=args.headline, keywords=KeywordFilter(settings.keywords).extract_keywords(args.headline))
+    event = NewsEvent(source="forexfactory_news", headline=args.headline, keywords=KeywordFilter(settings.keywords).extract_keywords(args.headline))
     result = ClaudeAnalyzer(settings.anthropic_api_key).analyze_event(event)
     print(result.to_json())
     return 0

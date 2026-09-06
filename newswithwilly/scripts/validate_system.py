@@ -51,7 +51,7 @@ def main() -> int:
     keyword_filter = KeywordFilter()
     headline = "Fed signals higher rates as Iran tensions lift gold"
     event = NewsEvent(
-        source="twitter",
+        source="forexfactory_news",
         headline=headline,
         timestamp=datetime.now(timezone.utc),
     )

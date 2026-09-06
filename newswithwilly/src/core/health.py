@@ -32,10 +32,9 @@ class HealthReport:
 class HealthCheck:
     """Check component availability and maintain lightweight process metrics."""
 
-    def __init__(self, *, database: Any | None = None, forex_factory: Any | None = None, twitter: Any | None = None, claude: Any | None = None, telegram: Any | None = None, event_queue: Any | None = None) -> None:
+    def __init__(self, *, database: Any | None = None, forex_factory: Any | None = None, claude: Any | None = None, telegram: Any | None = None, event_queue: Any | None = None) -> None:
         self.database = database
         self.forex_factory = forex_factory
-        self.twitter = twitter
         self.claude = claude
         self.telegram = telegram
         self.event_queue = event_queue
@@ -58,12 +57,6 @@ class HealthCheck:
 
     def check_forexfactory_scraper(self) -> ComponentHealth:
         return self._check_object("forexfactory", self.forex_factory, "scraper configured")
-
-    def check_twitter_api(self) -> ComponentHealth:
-        if self.twitter is None:
-            return self._result("twitter", "YELLOW", "Twitter monitor is not configured")
-        configured = bool(getattr(self.twitter, "bearer_token", None) or getattr(self.twitter, "_client", None))
-        return self._result("twitter", "GREEN" if configured else "YELLOW", "credentials/client configured" if configured else "credentials missing")
 
     def check_claude_api(self) -> ComponentHealth:
         if self.claude is None:
@@ -92,7 +85,6 @@ class HealthCheck:
         checks = (
             self.check_database_connection(),
             self.check_forexfactory_scraper(),
-            self.check_twitter_api(),
             self.check_claude_api(),
             self.check_telegram_api(),
             self.check_queue_status(),

@@ -30,6 +30,28 @@ Respond strictly in this JSON format:
   \"reasoning\": \"Clear explanation\"
 }}"""
 
+CALENDAR_PROMPT_TEMPLATE = """Analyze this upcoming economic calendar release for Gold (XAUUSD) and the US Dollar (DXY).
+
+Event: {headline}
+Currency: {currency}
+Impact: {impact_level}
+Release time: {release_time}
+Previous: {previous}
+Forecast: {forecast}
+Actual: {actual}
+
+This is a calendar-only pre-release analysis. Do not invent live market data.
+Use forecast versus previous only for the preliminary bias. The action must tell the trader to wait for the actual release before trading.
+Respond strictly in this JSON format:
+{{
+    "asset": "XAUUSD",
+    "sentiment": "BULLISH/BEARISH/NEUTRAL",
+    "impact_score": 9,
+    "action": "WAIT FOR ACTUAL AND MARKET REACTION",
+    "reasoning": "Short explanation of the forecast-based bias and what would confirm or invalidate it",
+    "confidence": 0.78
+}}"""
+
 
 @dataclass(frozen=True)
 class CostMetrics:
@@ -71,7 +93,7 @@ class ClaudeAnalyzer:
         if self._client is None:
             logger.warning("Claude API key/client is not configured; using neutral fallback")
             return self._fallback(event, "Claude client is not configured")
-        prompt = PROMPT_TEMPLATE.format(headline=event.headline, source=event.source, keywords=", ".join(event.keywords))
+        prompt = self._prompt_for(event)
         for attempt in range(1, self.max_retries + 1):
             try:
                 self._metrics["requests"] += 1
@@ -90,6 +112,21 @@ class ClaudeAnalyzer:
                 if attempt < self.max_retries:
                     time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
         return self._fallback(event, "Claude analysis failed after retries")
+
+    @staticmethod
+    def _prompt_for(event: NewsEvent) -> str:
+        if event.calendar is None:
+            return PROMPT_TEMPLATE.format(headline=event.headline, source=event.source, keywords=", ".join(event.keywords))
+        calendar = event.calendar
+        return CALENDAR_PROMPT_TEMPLATE.format(
+            headline=event.headline,
+            currency=calendar.currency,
+            impact_level=calendar.impact_level.upper(),
+            release_time=event.timestamp.isoformat(),
+            previous=calendar.previous or "unavailable",
+            forecast=calendar.forecast or "unavailable",
+            actual=calendar.actual or "not released",
+        )
 
     def cost_metrics(self) -> CostMetrics:
         return CostMetrics(**self._metrics)

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from .errors import ConfigurationError
 
-DEFAULT_KEYWORDS = "iran,war,tariff,bomb,cpi,fed,rates,dxy,gold"
+DEFAULT_KEYWORDS = "iran,war,peace,tariff,bomb,cpi,fed,rates,dxy,gold"
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class Settings:
     event_process_window_hours: int
     alert_dedupe_minutes: int
     alert_dedupe_state_file: Path
+    timezone_name: str
 
     @classmethod
     def from_environment(cls, env_file: str | Path | None = ".env") -> "Settings":
@@ -69,6 +70,7 @@ class Settings:
             event_process_window_hours=event_window_hours,
             alert_dedupe_minutes=alert_dedupe_minutes,
             alert_dedupe_state_file=Path(os.getenv("ALERT_DEDUPE_STATE_FILE", "logs/alert_dedupe_seen.json")),
+            timezone_name=os.getenv("TIMEZONE_NAME", "Africa/Nairobi"),
         )
 
 

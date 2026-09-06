@@ -7,6 +7,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
@@ -31,11 +32,11 @@ class SchedulerService:
     def __init__(
         self,
         forex_factory: Any,
-        twitter_monitor: Any | None = None,
         *,
         news_monitor: Any | None = None,
         news_check_callback: Callable[[], Any] | None = None,
         critical_news_check_callback: Callable[[], Any] | None = None,
+        daily_calendar_check_callback: Callable[[], Any] | None = None,
         news_interval_minutes: int = 5,
         critical_news_interval_minutes: int = 2,
         event_process_window_hours: int = 1,
@@ -43,16 +44,17 @@ class SchedulerService:
         health_callback: Callable[[], Any] | None = None,
         job_store_url: str | None = None,
         forex_interval_minutes: int = 5,
+        calendar_check_interval_minutes: int = 5,
     ) -> None:
-        if forex_interval_minutes < 1:
-            raise ValueError("forex_interval_minutes must be at least 1")
+        if forex_interval_minutes < 1 or calendar_check_interval_minutes < 1:
+            raise ValueError("forex and calendar intervals must be at least 1")
         self.forex_factory = forex_factory
-        self.twitter_monitor = twitter_monitor
         self.news_monitor = news_monitor
         if news_interval_minutes < 1 or critical_news_interval_minutes < 1 or event_process_window_hours < 1:
             raise ValueError("news intervals and event window must be at least 1")
         self.news_check_callback = news_check_callback
         self.critical_news_check_callback = critical_news_check_callback
+        self.daily_calendar_check_callback = daily_calendar_check_callback
         self.news_interval_minutes = news_interval_minutes
         self.critical_news_interval_minutes = critical_news_interval_minutes
         self.event_process_window_hours = event_process_window_hours
@@ -66,12 +68,13 @@ class SchedulerService:
             timezone="UTC",
         )
         self.forex_interval_minutes = forex_interval_minutes
+        self.calendar_check_interval_minutes = calendar_check_interval_minutes
         self._lock = threading.Lock()
         self._started = False
         self._scheduler.add_listener(self._job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
     def start(self) -> None:
-        """Register persistent jobs and start the scheduler and Twitter stream."""
+        """Register persistent jobs and start the scheduler."""
         with self._lock:
             if self._started:
                 raise RuntimeError("scheduler is already running")
@@ -87,6 +90,8 @@ class SchedulerService:
                 self._scheduler.add_job(_run_registered_job, "interval", minutes=self.news_interval_minutes, args=job_args + ("forex_news_check",), id="forex_news_check", replace_existing=True)
             if self.critical_news_check_callback is not None:
                 self._scheduler.add_job(_run_registered_job, "interval", minutes=self.critical_news_interval_minutes, args=job_args + ("critical_news_check",), id="critical_news_check", replace_existing=True)
+            if self.daily_calendar_check_callback is not None:
+                self._scheduler.add_job(_run_registered_job, "interval", minutes=self.calendar_check_interval_minutes, next_run_time=datetime.now(timezone.utc), args=job_args + ("daily_calendar_check",), id="daily_calendar_check", replace_existing=True)
             self._scheduler.add_job(_run_registered_job, "interval", hours=24, args=job_args + ("cleanup_old_data",), id="cleanup_old_data", replace_existing=True)
             self._scheduler.add_job(_run_registered_job, "interval", hours=1, args=job_args + ("health_check",), id="health_check", replace_existing=True)
             self._scheduler.start()
@@ -99,18 +104,14 @@ class SchedulerService:
                         logger.info("Removed stale job: %s", job.id)
             except Exception as e:
                 logger.warning("Failed to clean up stale jobs: %s", e)
-            if self.twitter_monitor is not None:
-                self.twitter_monitor.start(background=True)
             self._started = True
         logger.info("Scheduler started with persistent jobs")
 
     def shutdown(self, wait: bool = True) -> None:
-        """Stop Twitter and scheduler jobs without interrupting running work."""
+        """Stop scheduler jobs without interrupting running work."""
         with self._lock:
             if not self._started:
                 return
-            if self.twitter_monitor is not None:
-                self.twitter_monitor.stop(timeout=10)
             if hasattr(self.forex_factory, "stop_scheduled_checks"):
                 self.forex_factory.stop_scheduled_checks(timeout=10)
             self._scheduler.shutdown(wait=wait)
@@ -130,6 +131,11 @@ class SchedulerService:
         if self.critical_news_check_callback is None:
             return None
         return self._run_job("critical_news_check", self.critical_news_check_callback)
+
+    def daily_calendar_check(self) -> Any:
+        if self.daily_calendar_check_callback is None:
+            return None
+        return self._run_job("daily_calendar_check", self.daily_calendar_check_callback)
 
     def cleanup_old_data(self) -> Any:
         return self._run_job("cleanup_old_data", self.cleanup_callback)

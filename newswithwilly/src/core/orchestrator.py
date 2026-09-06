@@ -18,7 +18,6 @@ from notifiers.telegram_notifier import TelegramNotifier
 from pipeline_queue.event_queue import EventProcessor, EventQueue, QueueCapacityError
 from scrapers.forexfactory import ForexFactoryScraper
 from scrapers.forexfactory_news import ForexFactoryNewsScraper
-from scrapers.twitter_monitor import TwitterMonitor
 
 from .scheduler import SchedulerService
 
@@ -46,13 +45,13 @@ class Orchestrator:
         analyzer: ClaudeAnalyzer | None = None,
         alert_manager: AlertManager | None = None,
         forex_factory: ForexFactoryScraper | None = None,
-        twitter_monitor: TwitterMonitor | None = None,
         news_monitor: ForexFactoryNewsScraper | None = None,
         scheduler: SchedulerService | None = None,
         enable_forex_news: bool = True,
         news_interval_minutes: int = 5,
         critical_news_interval_minutes: int = 2,
         event_process_window_hours: int = 1,
+        timezone_name: str = "Africa/Nairobi",
         worker_count: int = 2,
         executor_workers: int = 4,
     ) -> None:
@@ -64,9 +63,10 @@ class Orchestrator:
         self.alert_manager = alert_manager or AlertManager(TelegramNotifier())
         self.forex_factory = forex_factory or ForexFactoryScraper(
             event_queue=self.event_queue,
+            timezone_name=timezone_name,
             seen_state_file="logs/forexfactory_calendar_seen.json",
+            daily_planned_state_file="logs/forexfactory_daily_planned_seen.json",
         )
-        self.twitter_monitor = twitter_monitor
         self.news_monitor = news_monitor or ForexFactoryNewsScraper(
             event_queue=self.event_queue,
             seen_state_file="logs/forexfactory_news_seen.json",
@@ -76,10 +76,10 @@ class Orchestrator:
         self._processors = [EventProcessor(self.event_queue, self._process_queued_event) for _ in range(worker_count)]
         self.scheduler = scheduler or SchedulerService(
             self.forex_factory,
-            self.twitter_monitor,
             news_monitor=self.news_monitor,
             news_check_callback=self.forex_news_check if enable_forex_news else None,
             critical_news_check_callback=self.critical_news_check if enable_forex_news else None,
+            daily_calendar_check_callback=self.daily_calendar_check,
             news_interval_minutes=news_interval_minutes,
             critical_news_interval_minutes=critical_news_interval_minutes,
             event_process_window_hours=event_process_window_hours,
@@ -141,6 +141,18 @@ class Orchestrator:
             logger.info("Critical news check queued %d high-priority story(s)", queued)
         return queued
 
+    def daily_calendar_check(self) -> int:
+        """Send one pre-release analysis for each event due within the next hour."""
+        analyzed = 0
+        for calendar_event in self.forex_factory.get_due_planned_medium_or_high_impact_usd_events():
+            if not self.forex_factory.claim_daily_planned_event(calendar_event):
+                continue
+            self._analyze_and_alert(calendar_event.to_news_event(), planned=True)
+            analyzed += 1
+        if analyzed:
+            logger.info("Pre-release calendar analysis completed for %d event(s)", analyzed)
+        return analyzed
+
     def wait(self) -> None:
         """Block until a shutdown signal or explicit stop."""
         self._stop_event.wait()
@@ -180,7 +192,7 @@ class Orchestrator:
             self._increment("failed_events")
             logger.exception("Event pipeline failed for %s", event.headline)
 
-    def _analyze_and_alert(self, event: NewsEvent) -> None:
+    def _analyze_and_alert(self, event: NewsEvent, *, planned: bool = False) -> None:
         analysis = self.analyzer.analyze_event(event)
         logger.info(
             "Claude analysis | asset=%s sentiment=%s impact=%d action=%s reasoning=%s",
@@ -190,7 +202,7 @@ class Orchestrator:
             analysis.action,
             (analysis.reasoning[:180] + "...") if len(analysis.reasoning) > 180 else analysis.reasoning,
         )
-        asyncio.run(self.alert_manager.process_analysis(analysis, event))
+        asyncio.run(self.alert_manager.process_analysis(analysis, event, planned=planned))
 
     def _install_signal_handlers(self) -> None:
         if self._signals_installed:

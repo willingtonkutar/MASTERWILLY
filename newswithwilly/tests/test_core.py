@@ -16,18 +16,6 @@ class FakeForex:
         return []
 
 
-class FakeTwitter:
-    def __init__(self):
-        self.started = False
-        self.stopped = False
-
-    def start(self, *, background=True):
-        self.started = background
-
-    def stop(self, timeout=None):
-        self.stopped = True
-
-
 class FakeScheduler:
     def start(self):
         pass
@@ -45,26 +33,23 @@ class FakeManager:
     def __init__(self):
         self.calls = 0
 
-    async def process_analysis(self, analysis, event):
+    async def process_analysis(self, analysis, event, *, planned=False):
         self.calls += 1
 
 
 def make_event(headline="Iran escalation lifts gold"):
-    return NewsEvent(source="twitter", headline=headline, timestamp=datetime.now(timezone.utc))
+    return NewsEvent(source="forexfactory_news", headline=headline, timestamp=datetime.now(timezone.utc))
 
 
 def test_scheduler_registers_jobs_and_stops_components(tmp_path):
     forex = FakeForex()
-    twitter = FakeTwitter()
-    scheduler = SchedulerService(forex, twitter, job_store_url=f"sqlite:///{tmp_path / 'jobs.db'}")
+    scheduler = SchedulerService(forex, job_store_url=f"sqlite:///{tmp_path / 'jobs.db'}")
 
     scheduler.start()
     jobs = {job.id for job in scheduler.scheduler.get_jobs()}
     scheduler.shutdown()
 
     assert jobs == {"forex_factory_check", "cleanup_old_data", "health_check"}
-    assert twitter.started
-    assert twitter.stopped
 
 
 def test_orchestrator_filters_and_processes_events():

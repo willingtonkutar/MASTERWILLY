@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
 
-from models import NewsEvent
+from models import CalendarEventData, NewsEvent
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,13 @@ class ForexFactoryEvent:
             timestamp=self.timestamp,
             keywords=[value.lower() for value in values if value],
             asset_mentions=["XAUUSD", "DXY"],
+            calendar=CalendarEventData(
+                currency=self.currency,
+                impact_level=self.impact_level.lower(),
+                previous=self.previous,
+                forecast=self.forecast,
+                actual=self.actual,
+            ),
         )
 
 
@@ -83,6 +90,7 @@ class ForexFactoryScraper:
         session: requests.Session | None = None,
         event_queue: Any | None = None,
         seen_state_file: str | Path | None = None,
+        daily_planned_state_file: str | Path | None = None,
         max_seen_items: int = 5000,
     ) -> None:
         if cache_seconds < 0 or check_interval_seconds < 1 or max_retries < 1 or timeout_seconds < 1:
@@ -107,9 +115,11 @@ class ForexFactoryScraper:
         self._stop_event = threading.Event()
         self._scheduler_thread: threading.Thread | None = None
         self._seen_state_file = Path(seen_state_file) if seen_state_file else None
+        self._daily_planned_state_file = Path(daily_planned_state_file) if daily_planned_state_file else None
         self._max_seen_items = max_seen_items
         self._seen_lock = threading.Lock()
         self.seen_events: dict[str, str | None] = self._load_seen_events()
+        self._daily_planned_events: set[str] = self._load_daily_planned_events()
 
     def get_weekly_calendar(self, *, force_refresh: bool = False) -> list[ForexFactoryEvent]:
         """Fetch, parse, and cache this week's calendar."""
@@ -124,13 +134,17 @@ class ForexFactoryScraper:
             self._cache = (time.monotonic(), events)
         return list(events)
 
-    def filter_high_impact_usd_events(self, events: Iterable[ForexFactoryEvent]) -> list[ForexFactoryEvent]:
-        """Keep only USD events marked high impact."""
-        return [event for event in events if event.currency.upper() == "USD" and event.impact_level.lower() == "high"]
+    def filter_medium_or_high_impact_usd_events(self, events: Iterable[ForexFactoryEvent]) -> list[ForexFactoryEvent]:
+        """Keep USD events marked medium or high impact."""
+        return [
+            event
+            for event in events
+            if event.currency.upper() == "USD" and event.impact_level.lower() in {"medium", "high"}
+        ]
 
     def check_once(self, *, force_refresh: bool = False, process_window_hours: int = 1) -> list[ForexFactoryEvent]:
-        """Fetch high-impact USD events and enqueue them when configured."""
-        events = self.filter_high_impact_usd_events(self.get_weekly_calendar(force_refresh=force_refresh))
+        """Fetch medium- and high-impact USD events and enqueue them when configured."""
+        events = self.filter_medium_or_high_impact_usd_events(self.get_weekly_calendar(force_refresh=force_refresh))
         now = datetime.now(timezone.utc)
         window = timedelta(hours=process_window_hours)
         events = [
@@ -157,6 +171,45 @@ class ForexFactoryScraper:
             self._persist_seen_events()
         return new_events
 
+    def get_todays_planned_medium_or_high_impact_usd_events(self) -> list[ForexFactoryEvent]:
+        """Return today's future, unreleased USD medium/high events."""
+        today = datetime.now(self.local_timezone).date()
+        now = datetime.now(timezone.utc)
+        return [
+            event
+            for event in self.filter_medium_or_high_impact_usd_events(self.get_weekly_calendar(force_refresh=True))
+            if event.timestamp >= now
+            and not event.actual
+            and event.timestamp.astimezone(self.local_timezone).date() == today
+        ]
+
+    def get_due_planned_medium_or_high_impact_usd_events(
+        self,
+        *,
+        lead_time_minutes: int = 60,
+        now: datetime | None = None,
+    ) -> list[ForexFactoryEvent]:
+        """Return unreleased USD medium/high events due within the lead time."""
+        if lead_time_minutes < 1:
+            raise ValueError("lead_time_minutes must be at least 1")
+        current_time = now or datetime.now(timezone.utc)
+        deadline = current_time + timedelta(minutes=lead_time_minutes)
+        return [
+            event
+            for event in self.get_todays_planned_medium_or_high_impact_usd_events()
+            if current_time <= event.timestamp <= deadline
+        ]
+
+    def claim_daily_planned_event(self, event: ForexFactoryEvent) -> bool:
+        """Claim an event for today's planned analysis, persisting the claim."""
+        claim = f"{datetime.now(self.local_timezone).date().isoformat()}:{event.id}"
+        with self._seen_lock:
+            if claim in self._daily_planned_events:
+                return False
+            self._daily_planned_events.add(claim)
+        self._persist_daily_planned_events()
+        return True
+
     def _load_seen_events(self) -> dict[str, str | None]:
         if self._seen_state_file is None or not self._seen_state_file.exists():
             return {}
@@ -168,6 +221,29 @@ class ForexFactoryScraper:
         if not isinstance(data, dict):
             return {}
         return {str(key): (None if value is None else str(value)) for key, value in data.items() if key}
+
+    def _load_daily_planned_events(self) -> set[str]:
+        if self._daily_planned_state_file is None or not self._daily_planned_state_file.exists():
+            return set()
+        try:
+            data = json.loads(self._daily_planned_state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("Failed to load daily planned calendar state from %s", self._daily_planned_state_file)
+            return set()
+        if not isinstance(data, list):
+            return set()
+        return {str(item) for item in data if item}
+
+    def _persist_daily_planned_events(self) -> None:
+        if self._daily_planned_state_file is None:
+            return
+        try:
+            items = sorted(self._daily_planned_events)[-self._max_seen_items :]
+            self._daily_planned_events = set(items)
+            self._daily_planned_state_file.parent.mkdir(parents=True, exist_ok=True)
+            self._daily_planned_state_file.write_text(json.dumps(items), encoding="utf-8")
+        except OSError:
+            logger.warning("Failed to persist daily planned calendar state to %s", self._daily_planned_state_file)
 
     def _persist_seen_events(self) -> None:
         if self._seen_state_file is None:
@@ -212,7 +288,7 @@ class ForexFactoryScraper:
     def _adaptive_loop(self, process_window_hours: int) -> None:
         while not self._stop_event.is_set():
             try:
-                events = self.filter_high_impact_usd_events(self.get_weekly_calendar(force_refresh=True))
+                events = self.filter_medium_or_high_impact_usd_events(self.get_weekly_calendar(force_refresh=True))
                 self.check_once(process_window_hours=process_window_hours)
                 now = datetime.now(timezone.utc)
                 upcoming = [event.timestamp - now for event in events if event.timestamp >= now]

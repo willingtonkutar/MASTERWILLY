@@ -29,6 +29,13 @@ def test_filter_news_mode_matches_unscheduled_event_patterns():
     assert KeywordFilter().pre_filter("Policy change shocks markets", news_mode=True)
 
 
+def test_filter_detects_peace_in_normal_and_news_modes():
+    keyword_filter = KeywordFilter()
+
+    assert keyword_filter.extract_keywords("Peace talks begin") == ["peace"]
+    assert keyword_filter.extract_keywords("Peace agreement reached", news_mode=True) == ["peace"]
+
+
 def test_filter_rejects_non_string_text():
     with pytest.raises(TypeError):
         KeywordFilter().pre_filter(None)

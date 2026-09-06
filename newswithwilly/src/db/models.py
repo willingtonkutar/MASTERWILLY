@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -29,6 +30,7 @@ class NewsEvent(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     keywords: Mapped[str] = mapped_column(Text, default="", nullable=False)
     asset_mentions: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    calendar_data: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     analyses: Mapped[list[AnalysisResult]] = relationship(back_populates="event", cascade="all, delete-orphan")
@@ -44,6 +46,7 @@ class NewsEvent(Base):
             "timestamp": self.timestamp,
             "keywords": _split_values(self.keywords),
             "asset_mentions": _split_values(self.asset_mentions),
+            "calendar": json.loads(self.calendar_data) if self.calendar_data else None,
             "created_at": self.created_at,
         }
 

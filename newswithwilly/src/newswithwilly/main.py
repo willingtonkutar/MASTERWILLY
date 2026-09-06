@@ -62,6 +62,7 @@ def command_run(args: argparse.Namespace, settings: Settings) -> int:
         news_interval_minutes=settings.forex_news_check_interval,
         critical_news_interval_minutes=settings.critical_news_check_interval,
         event_process_window_hours=settings.event_process_window_hours,
+        timezone_name=settings.timezone_name,
     )
     orchestrator.start()
     try:
@@ -101,7 +102,7 @@ def command_analyze(args: argparse.Namespace, settings: Settings) -> int:
     if not args.headline:
         raise ValueError("analyze requires a headline")
     event = NewsEvent(
-        source="twitter",
+        source="forexfactory_news",
         headline=args.headline,
         keywords=KeywordFilter(settings.keywords).extract_keywords(args.headline),
     )

@@ -61,20 +61,20 @@ class AlertManager:
         self._asset_sent_at: dict[str, datetime] = {}
         self._sent_times: deque[datetime] = deque()
 
-    async def process_analysis(self, analysis: AnalysisResult, event: NewsEvent) -> AlertDecision:
+    async def process_analysis(self, analysis: AnalysisResult, event: NewsEvent, *, planned: bool = False) -> AlertDecision:
         """Evaluate, persist, and deliver an analysis according to alert policy."""
         priority = self._priority(analysis.impact_score)
-        if priority == "LOW":
+        if priority == "LOW" and not planned:
             logger.info("Low-impact event logged without alert: %s", event.headline)
             return AlertDecision(priority, None, False, "impact score below threshold")
 
         now = datetime.now(timezone.utc)
-        dedupe_keys = self._dedupe_keys(event)
-        if self._is_duplicate(dedupe_keys, now) or await self._is_persisted_duplicate(event, now):
+        dedupe_keys = self._planned_dedupe_keys(event, now) if planned else self._dedupe_keys(event)
+        if self._is_duplicate(dedupe_keys, now) or (not planned and await self._is_persisted_duplicate(event, now)):
             return AlertDecision(priority, None, False, "duplicate headline within dedupe window")
-        if self._is_asset_cooling_down(analysis.asset, now):
+        if not planned and self._is_asset_cooling_down(analysis.asset, now):
             return AlertDecision(priority, None, False, "asset cooldown is active")
-        if not self._within_hourly_limit(now):
+        if not planned and not self._within_hourly_limit(now):
             return AlertDecision(priority, None, False, "hourly alert limit reached")
 
         alert = Alert(
@@ -91,8 +91,9 @@ class AlertManager:
         if sent:
             for key in dedupe_keys:
                 self._recent_headlines[key] = now
-            self._asset_sent_at[analysis.asset.upper()] = now
-            self._sent_times.append(now)
+            if not planned:
+                self._asset_sent_at[analysis.asset.upper()] = now
+                self._sent_times.append(now)
             self._persist_recent_seen(now)
             logger.info(
                 "Telegram alert sent | priority=%s asset=%s impact=%d headline=%s",
@@ -121,6 +122,8 @@ class AlertManager:
         return "LOW"
 
     def _is_duplicate(self, keys: list[str], now: datetime) -> bool:
+        if self.dedupe_window <= timedelta(0):
+            return False
         for key in keys:
             previous = self._recent_headlines.get(key)
             if previous is not None and now - previous <= self.dedupe_window:
@@ -164,6 +167,10 @@ class AlertManager:
         if event.url:
             keys.append(f"url:{event.url.strip()}")
         return keys
+
+    @classmethod
+    def _planned_dedupe_keys(cls, event: NewsEvent, now: datetime) -> list[str]:
+        return [f"planned:{now.date().isoformat()}:{event.id}"]
 
     def _load_recent_seen(self) -> dict[str, datetime]:
         if self._seen_state_file is None or not self._seen_state_file.exists():

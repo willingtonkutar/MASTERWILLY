@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from models import AnalysisResult, NewsEvent
+from models import CalendarEventData
 from notifiers.alert_manager import AlertManager
 from notifiers.telegram_notifier import TelegramNotifier
 
@@ -38,7 +39,7 @@ class FakeNotifier:
 
 
 def make_event(headline="Fed raises rates"):
-    return NewsEvent(source="twitter", headline=headline, timestamp=datetime.now(timezone.utc), url="https://example.test/news")
+    return NewsEvent(source="forexfactory_news", headline=headline, timestamp=datetime.now(timezone.utc), url="https://example.test/news")
 
 
 def make_analysis(event, score=9, asset="XAUUSD"):
@@ -61,6 +62,21 @@ def test_telegram_formats_and_sends_markdown_v2():
     assert session.posts[0][1]["json"]["parse_mode"] == "MarkdownV2"
 
 
+def test_telegram_formats_high_impact_calendar_alert():
+    event = NewsEvent(
+        source="forexfactory",
+        headline="US CPI",
+        timestamp=datetime.now(timezone.utc),
+        calendar=CalendarEventData(currency="USD", impact_level="high", previous="3.2%", forecast="3.5%"),
+    )
+    message = TelegramNotifier.format_alert_message(make_analysis(event), event)
+
+    assert "📊 EXPECTATION" in message
+    assert r"Previous: 3\.2%" in message
+    assert "DXY:" not in message
+    assert "Wait for actual before trading" in message
+
+
 def test_alert_manager_applies_threshold_and_deduplication():
     notifier = FakeNotifier()
     manager = AlertManager(notifier, impact_threshold=7, dedupe_minutes=30, asset_cooldown_minutes=0)
@@ -77,6 +93,32 @@ def test_alert_manager_applies_threshold_and_deduplication():
     assert not second.sent and "duplicate" in second.reason
     assert low.alert is None and low.priority == "LOW"
     assert len(notifier.sent) == 1
+
+
+def test_planned_analysis_sends_even_when_claude_score_is_below_threshold():
+    notifier = FakeNotifier()
+    manager = AlertManager(notifier, impact_threshold=7, asset_cooldown_minutes=0)
+    event = make_event("ISM Manufacturing Prices")
+    analysis = make_analysis(event, score=6)
+
+    decision = asyncio.run(manager.process_analysis(analysis, event, planned=True))
+
+    assert decision.sent
+    assert decision.priority == "LOW"
+    assert len(notifier.sent) == 1
+
+
+def test_planned_analysis_does_not_cool_down_the_actual_alert():
+    notifier = FakeNotifier()
+    manager = AlertManager(notifier, impact_threshold=7, asset_cooldown_minutes=10)
+    planned_event = make_event("ISM Manufacturing Prices")
+    actual_event = make_event("ISM Manufacturing Prices actual")
+
+    planned = asyncio.run(manager.process_analysis(make_analysis(planned_event, score=6), planned_event, planned=True))
+    actual = asyncio.run(manager.process_analysis(make_analysis(actual_event, score=8), actual_event))
+
+    assert planned.sent
+    assert actual.sent
 
 
 def test_alert_manager_limits_hourly_alerts():

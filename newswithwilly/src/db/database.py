@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -76,7 +77,7 @@ class DatabaseService:
                 return None
             normalized = _normalize_event_data(values)
             for field, value in normalized.items():
-                if field not in {"source", "headline", "content", "url", "timestamp", "keywords", "asset_mentions"}:
+                if field not in {"source", "headline", "content", "url", "timestamp", "keywords", "asset_mentions", "calendar_data"}:
                     raise ValueError(f"Unsupported news event field: {field}")
                 setattr(event, field, value)
             await session.flush()
@@ -163,6 +164,9 @@ class DatabaseService:
 
 def _normalize_event_data(data: Mapping[str, Any]) -> dict[str, Any]:
     values = dict(data)
+    calendar = values.pop("calendar", None)
+    if calendar is not None:
+        values["calendar_data"] = json.dumps(calendar.model_dump(mode="json") if hasattr(calendar, "model_dump") else calendar)
     for field in ("keywords", "asset_mentions"):
         if isinstance(values.get(field), (list, tuple)):
             values[field] = ",".join(str(item) for item in values[field])

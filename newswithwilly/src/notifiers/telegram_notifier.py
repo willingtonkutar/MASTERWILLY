@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import os
 import time
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -64,6 +66,8 @@ class TelegramNotifier:
     @staticmethod
     def format_alert_message(analysis: AnalysisResult, event: NewsEvent) -> str:
         """Format an analysis as Telegram MarkdownV2."""
+        if event.calendar is not None:
+            return TelegramNotifier.format_calendar_alert_message(analysis, event)
         score = max(1, min(10, analysis.impact_score))
         bar = "■" * score + "□" * (10 - score)
         sentiment_icon = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}[analysis.sentiment]
@@ -81,6 +85,61 @@ class TelegramNotifier:
             f"*Reasoning:* {TelegramNotifier._escape(analysis.reasoning)}\n"
             f"*Confidence:* {analysis.confidence:.0%}\n"
             f"{source}"
+        )
+
+    @staticmethod
+    def format_calendar_alert_message(analysis: AnalysisResult, event: NewsEvent) -> str:
+        """Format a pre-release calendar analysis using the calendar alert layout."""
+        calendar = event.calendar
+        if calendar is None:
+            return TelegramNotifier.format_alert_message(analysis, event)
+        minutes = max(0, round((event.timestamp - datetime.now(timezone.utc)).total_seconds() / 60))
+        try:
+            display_timezone = ZoneInfo(os.getenv("TIMEZONE_NAME", "Africa/Nairobi"))
+        except Exception:
+            display_timezone = timezone.utc
+        release_time = event.timestamp.astimezone(display_timezone)
+        impact = calendar.impact_level.upper()
+        sentiment_icon = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}[analysis.sentiment]
+        source = f"[Open source]({TelegramNotifier._escape_url(event.url)})" if event.url else TelegramNotifier._escape("Source: " + event.source)
+        if impact == "HIGH":
+            return (
+                f"🚨 *GOLD NEWS ALERT*\n"
+                f"🇺🇸 {TelegramNotifier._escape(event.headline)} | HIGH IMPACT\n"
+                f"⏰ Release: {TelegramNotifier._escape(release_time.strftime('%H:%M EAT'))}\n"
+                f"⏳ T-{minutes} MIN\n\n"
+                f"XAUUSD: 🟡 WAIT\n\n"
+                f"━━━━━━━━━━━━━━━━\n"
+                f"📊 EXPECTATION\n"
+                f"Previous: {TelegramNotifier._escape(calendar.previous or 'Unavailable')}\n"
+                f"Forecast: {TelegramNotifier._escape(calendar.forecast or 'Unavailable')}\n\n"
+                f"Actual: {TelegramNotifier._escape(calendar.actual or 'Not released')}\n\n"
+                f"🎯 GOLD BIAS\n"
+                f"Forecast → {sentiment_icon} {TelegramNotifier._escape(analysis.sentiment)}\n"
+                f"{TelegramNotifier._escape(analysis.reasoning)}\n\n"
+                f"━━━━━━━━━━━━━━━━\n"
+                f"⚡ SURPRISE MAP\n"
+                f"Actual below forecast → 🟢 GOLD BUY\n"
+                f"Actual near forecast → 🟡 NEUTRAL\n"
+                f"Actual above forecast → 🔴 GOLD SELL\n\n"
+                f"🧠 TRADING PLAN\n"
+                f"🟢 BUY GOLD: Weak release versus forecast\n"
+                f"🔴 SELL GOLD: Hot release versus forecast\n\n"
+                f"⚠️ Avoid guessing before release.\nWait for actual before trading.\n\n"
+                f"Confidence: {analysis.confidence:.0%}\n{source}"
+            )
+        return (
+            f"🟠 *GOLD NEWS*\n"
+            f"🇺🇸 {TelegramNotifier._escape(event.headline)} | MEDIUM\n"
+            f"⏰ Release: {TelegramNotifier._escape(release_time.strftime('%H:%M EAT'))} | T-{minutes}\n\n"
+            f"Previous: {TelegramNotifier._escape(calendar.previous or 'Unavailable')}\n"
+            f"Forecast: {TelegramNotifier._escape(calendar.forecast or 'Unavailable')}\n\n"
+            f"Actual: {TelegramNotifier._escape(calendar.actual or 'Not released')}\n\n"
+            f"XAUUSD BIAS: {sentiment_icon} {TelegramNotifier._escape(analysis.sentiment)}\n\n"
+            f"⚡ SURPRISE MAP\n"
+            f"Below forecast → 🟢 GOLD\nNear forecast → 🟡\nAbove forecast → 🔴 GOLD\n\n"
+            f"🎯 PLAN\nWeak data → favor GOLD buys\nStrong data → favor GOLD sells\n\n"
+            f"⚠️ Wait for actual before trading.\nConfidence: {analysis.confidence:.0%}\n{source}"
         )
 
     def _post(self, payload: dict[str, Any]) -> bool:

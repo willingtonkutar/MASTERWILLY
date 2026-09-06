@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from analyzers.claude_analyzer import ClaudeAnalyzer
-from models import NewsEvent
+from models import CalendarEventData, NewsEvent
 
 
 class FakeMessages:
@@ -14,7 +15,7 @@ class FakeMessages:
 
 
 def event():
-    return NewsEvent(source="twitter", headline="Fed signals higher rates", keywords=["fed", "rates"])
+    return NewsEvent(source="forexfactory_news", headline="Fed signals higher rates", keywords=["fed", "rates"])
 
 
 def test_analyzer_parses_structured_response_and_tracks_cost():
@@ -61,3 +62,17 @@ def test_analyzer_falls_back_after_invalid_response():
 
     assert result.sentiment == "NEUTRAL"
     assert result.event_id is not None
+
+
+def test_calendar_analysis_prompt_includes_structured_values():
+    calendar_event = NewsEvent(
+        source="forexfactory",
+        headline="Consumer Price Index",
+        timestamp=datetime.now(timezone.utc),
+        calendar=CalendarEventData(currency="USD", impact_level="high", previous="3.2%", forecast="3.5%"),
+    )
+    prompt = ClaudeAnalyzer._prompt_for(calendar_event)
+
+    assert "Previous: 3.2%" in prompt
+    assert "Forecast: 3.5%" in prompt
+    assert "calendar-only" in prompt

@@ -35,7 +35,7 @@ tests/                Focused behavior tests
 
 The current runtime flow is:
 
-1. **Calendar ingestion** checks Forex Factory high-impact USD events and respects the configured processing window.
+1. **Calendar ingestion** checks Forex Factory medium- and high-impact USD events and respects the configured processing window.
 2. **News ingestion** checks Forex Factory breaking news on regular and critical schedules.
 3. **Filtering** applies keyword and news-mode rules before paid analysis calls.
 4. **Analysis** sends selected events to Claude and validates structured output.
@@ -96,7 +96,7 @@ ALERT_DEDUPE_STATE_FILE=logs/alert_dedupe_seen.json
 
 `ALERT_DEDUPE_MINUTES` controls how long an already-sent story is suppressed across restarts. Set it to `0` to disable alert deduplication.
 
-The calendar uses adaptive polling near scheduled high-impact releases. Calendar deduplication is held in memory for the current process; an event is processed again when its actual value changes.
+The calendar processes medium- and high-impact USD releases, uses adaptive polling near scheduled releases, and deduplicates events in memory for the current process; an event is processed again when its actual value changes. Calendar impact only controls queue ordering; Claude's returned score controls whether Telegram sends an alert.
 
 ## Logging and errors
 

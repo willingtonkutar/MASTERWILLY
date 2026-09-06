@@ -17,7 +17,7 @@ from models import (
 
 def test_news_event_factory_and_serialization():
     event = create_news_event(
-        source="twitter",
+        source="forexfactory_news",
         headline="Fed signals rates may remain unchanged",
         keywords=["fed", "rates"],
         asset_mentions=["XAUUSD", "DXY"],
@@ -27,7 +27,7 @@ def test_news_event_factory_and_serialization():
 
     assert restored.id == event.id
     assert restored.timestamp.tzinfo is not None
-    assert restored.to_dict()["source"] == "twitter"
+    assert restored.to_dict()["source"] == "forexfactory_news"
 
 
 def test_analysis_result_validates_bounds_and_serializes_uuid():
@@ -73,7 +73,7 @@ def test_models_reject_invalid_literals_and_empty_text():
         NewsEvent(source="rss", headline="Headline")
 
     with pytest.raises(ValidationError):
-        NewsEvent(source="twitter", headline="   ")
+        NewsEvent(source="forexfactory_news", headline="   ")
 
     with pytest.raises(ValidationError):
         AnalysisResult(

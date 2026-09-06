@@ -17,8 +17,8 @@ HTML = """
   <td class="calendar__actual"></td>
 </tr>
 <tr class="calendar__row" data-date="2026-08-24T14:00:00+00:00">
-  <td class="calendar__currency">EUR</td>
-  <td class="calendar__impact"><span title="High Impact"></span></td>
+    <td class="calendar__currency">USD</td>
+    <td class="calendar__impact"><span title="Medium Impact"></span></td>
   <td class="calendar__time">10:00am</td>
   <td class="calendar__event">ECB Rate Decision</td>
 </tr>
@@ -49,15 +49,17 @@ def test_scraper_parses_filters_and_caches_calendar():
 
     events = scraper.get_weekly_calendar()
     scraper.get_weekly_calendar()
-    selected = scraper.filter_high_impact_usd_events(events)
+    selected = scraper.filter_medium_or_high_impact_usd_events(events)
 
     assert session.calls == 1
     assert len(events) == 2
-    assert len(selected) == 1
+    assert len(selected) == 2
     assert selected[0].name == "Consumer Price Index"
     assert selected[0].forecast == "3.1%"
     assert selected[0].impact_score == 9
     assert selected[0].timestamp.hour == 8
+    assert selected[1].impact_level == "medium"
+    assert selected[0].to_news_event().calendar.previous == "3.0%"
 
 
 def test_parse_event_row_converts_local_time_to_utc():
@@ -92,3 +94,41 @@ def test_check_once_deduplicates_events_and_reprocesses_actual_updates():
     scraper.get_weekly_calendar = lambda **kwargs: [replace(calendar_event, actual="3.1%")]
     assert len(scraper.check_once()) == 1
     assert len(queue.events) == 2
+
+
+def test_daily_planned_events_are_claimed_once(tmp_path):
+    event = ForexFactoryEvent(
+        name="ISM Manufacturing Prices",
+        timestamp=datetime.now(timezone.utc) + timedelta(minutes=1),
+        currency="USD",
+        impact_level="medium",
+        id=uuid4(),
+    )
+    scraper = ForexFactoryScraper(daily_planned_state_file=tmp_path / "planned.json")
+    scraper.get_weekly_calendar = lambda **kwargs: [event]
+
+    assert scraper.get_todays_planned_medium_or_high_impact_usd_events() == [event]
+    assert scraper.claim_daily_planned_event(event)
+    assert not scraper.claim_daily_planned_event(event)
+
+
+def test_due_planned_events_are_limited_to_the_next_hour():
+    now = datetime.now(timezone.utc)
+    due = ForexFactoryEvent(
+        name="CPI",
+        timestamp=now + timedelta(minutes=45),
+        currency="USD",
+        impact_level="high",
+        id=uuid4(),
+    )
+    later = ForexFactoryEvent(
+        name="ISM",
+        timestamp=now + timedelta(minutes=90),
+        currency="USD",
+        impact_level="medium",
+        id=uuid4(),
+    )
+    scraper = ForexFactoryScraper()
+    scraper.get_weekly_calendar = lambda **kwargs: [due, later]
+
+    assert scraper.get_due_planned_medium_or_high_impact_usd_events(now=now) == [due]
