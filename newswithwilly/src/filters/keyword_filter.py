@@ -6,7 +6,10 @@ import re
 from dataclasses import dataclass
 
 
-DEFAULT_KEYWORDS = ("iran", "war", "peace", "tariff", "bomb", "cpi", "fed", "rates", "dxy", "gold")
+DEFAULT_KEYWORDS = (
+    "iran", "war", "peace", "tariff", "bomb", "cpi", "fed", "rates", "dxy", "gold",
+    "oil rises", "new strikes", "strikes",
+)
 NEWS_KEYWORDS = (
     "buys bonds", "bond buyback", "treasury purchase", "intervenes", "intervention",
     "currency intervention", "announces", "unveils", "reveals", "shocks", "surprises",

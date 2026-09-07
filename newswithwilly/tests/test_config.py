@@ -16,6 +16,16 @@ def test_settings_parse_environment(monkeypatch, tmp_path):
     assert settings.log_file == tmp_path / "app.log"
 
 
+def test_settings_include_new_default_filter_keywords(monkeypatch):
+    monkeypatch.delenv("KEYWORDS", raising=False)
+
+    settings = Settings.from_environment(env_file=None)
+
+    assert "oil rises" in settings.keywords
+    assert "new strikes" in settings.keywords
+    assert "strikes" in settings.keywords
+
+
 def test_settings_reject_invalid_threshold(monkeypatch):
     monkeypatch.setenv("KEYWORDS", "gold")
     monkeypatch.setenv("IMPACT_THRESHOLD", "11")

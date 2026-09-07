@@ -36,6 +36,17 @@ def test_filter_detects_peace_in_normal_and_news_modes():
     assert keyword_filter.extract_keywords("Peace agreement reached", news_mode=True) == ["peace"]
 
 
+def test_filter_detects_oil_rises_and_strikes():
+    keyword_filter = KeywordFilter()
+
+    assert keyword_filter.extract_keywords("Oil rises as new strikes begin") == [
+        "oil rises",
+        "new strikes",
+        "strikes",
+    ]
+    assert keyword_filter.pre_filter("Markets react to STRIKES")
+
+
 def test_filter_rejects_non_string_text():
     with pytest.raises(TypeError):
         KeywordFilter().pre_filter(None)

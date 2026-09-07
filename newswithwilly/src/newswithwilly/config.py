@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from .errors import ConfigurationError
 
-DEFAULT_KEYWORDS = "iran,war,peace,tariff,bomb,cpi,fed,rates,dxy,gold"
+DEFAULT_KEYWORDS = "iran,war,peace,tariff,bomb,cpi,fed,rates,dxy,gold,oil rises,new strikes,strikes"
 
 
 @dataclass(frozen=True)
