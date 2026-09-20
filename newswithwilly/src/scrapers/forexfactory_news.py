@@ -124,6 +124,21 @@ class ForexFactoryNewsScraper:
         self._persist_seen_urls()
         return True
 
+    def prime_seen_stories(self) -> int:
+        """Remember stories visible at startup without sending backlog alerts."""
+        discovered = 0
+        for event in self.get_breaking_news():
+            if not event.url:
+                continue
+            with self._seen_lock:
+                if event.url in self._seen_urls:
+                    continue
+                self._seen_urls.add(event.url)
+                discovered += 1
+        if discovered:
+            self._persist_seen_urls()
+        return discovered
+
     def _load_seen_urls(self) -> set[str]:
         if self._seen_state_file is None or not self._seen_state_file.exists():
             return set()

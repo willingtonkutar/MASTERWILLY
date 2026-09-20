@@ -69,6 +69,13 @@ def test_check_for_updates_deduplicates_and_enqueues():
     assert queue.scores == [9, 5]
 
 
+def test_prime_seen_stories_suppresses_startup_backlog():
+    scraper = ForexFactoryNewsScraper(session=FakeSession())
+
+    assert scraper.prime_seen_stories() == 2
+    assert scraper.check_for_updates() == []
+
+
 class FailOnceSession:
     def __init__(self):
         self.calls = 0

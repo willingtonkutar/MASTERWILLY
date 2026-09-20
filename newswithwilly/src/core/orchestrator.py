@@ -97,6 +97,8 @@ class Orchestrator:
         self._stop_event.clear()
         for processor in self._processors:
             processor.start()
+        # Establish a startup baseline so stories from while the bot was offline are not sent as backlog alerts.
+        self.news_monitor.prime_seen_stories()
         self.scheduler.start()
         self._install_signal_handlers()
         logger.info("Orchestrator started")
