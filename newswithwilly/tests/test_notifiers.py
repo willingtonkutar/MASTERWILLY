@@ -71,10 +71,12 @@ def test_telegram_formats_high_impact_calendar_alert():
     )
     message = TelegramNotifier.format_alert_message(make_analysis(event), event)
 
-    assert "📊 EXPECTATION" in message
+    assert r"PRE\-RELEASE PLAN" in message
     assert r"Previous: 3\.2%" in message
     assert "DXY:" not in message
-    assert "Wait for actual before trading" in message
+    assert "Claude bias" not in message
+    assert "wait for the actual release" in message
+    assert r"HIGH\-IMPACT" in message
 
 
 def test_alert_manager_applies_threshold_and_deduplication():

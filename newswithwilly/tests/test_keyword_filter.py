@@ -47,6 +47,13 @@ def test_filter_detects_oil_rises_and_strikes():
     assert keyword_filter.pre_filter("Markets react to STRIKES")
 
 
+def test_filter_detects_common_oil_price_headline_variations():
+    keyword_filter = KeywordFilter()
+
+    assert "oil rises" in keyword_filter.extract_keywords("Oil prices rise after attacks")
+    assert "oil rises" in keyword_filter.extract_keywords("Brent crude gains")
+
+
 def test_filter_rejects_non_string_text():
     with pytest.raises(TypeError):
         KeywordFilter().pre_filter(None)

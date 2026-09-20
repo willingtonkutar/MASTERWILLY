@@ -28,6 +28,7 @@ KEYWORD_VARIATIONS = {
     "rates": ("rate", "interest rate", "interest rates"),
     "dxy": ("dollar", "us dollar", "usd"),
     "gold": ("xauusd", "xau/usd"),
+    "oil rises": ("oil rise", "oil rises", "oil prices", "crude", "brent", "wti"),
 }
 NEGATIONS = ("no", "not", "unlikely")
 

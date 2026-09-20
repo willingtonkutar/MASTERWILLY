@@ -64,6 +64,41 @@ def test_analyzer_falls_back_after_invalid_response():
     assert result.event_id is not None
 
 
+def test_news_prompt_checks_safe_haven_and_oil_offsets_for_xauusd():
+    news_event = NewsEvent(
+        source="forexfactory_news",
+        headline="Iran attacks raise oil prices",
+        content="Crude futures moved higher after the announcement.",
+        keywords=["iran", "oil rises"],
+        asset_mentions=["XAUUSD"],
+    )
+
+    prompt = ClaudeAnalyzer._prompt_for(news_event)
+
+    assert "safe-haven demand" in prompt
+    assert "oil or crude-price upside" in prompt
+    assert "Do not assume that geopolitical escalation is automatically bullish for gold" in prompt
+    assert "Crude futures moved higher" in prompt
+    assert "XAUUSD" in prompt
+    assert "OIL: likely direction and mechanism" in prompt
+    assert "DXY: likely direction and mechanism" in prompt
+    assert "GOLD: safe-haven effect versus oil/USD/yield offset" in prompt
+    assert "SUMMARY: immediate XAUUSD bias" in prompt
+
+
+def test_news_prompt_keeps_cross_asset_guidance_for_geopolitical_terms_only():
+    regular_prompt = ClaudeAnalyzer._prompt_for(
+        NewsEvent(source="forexfactory_news", headline="Company announces new product", keywords=["announces"])
+    )
+    geopolitical_prompt = ClaudeAnalyzer._prompt_for(
+        NewsEvent(source="forexfactory_news", headline="US bombing Iran", keywords=["iran", "bomb"])
+    )
+
+    assert "Do not infer unrelated oil or geopolitical effects" in regular_prompt
+    assert "OIL: likely direction and mechanism" not in regular_prompt
+    assert "OIL: likely direction and mechanism" in geopolitical_prompt
+
+
 def test_calendar_analysis_prompt_includes_structured_values():
     calendar_event = NewsEvent(
         source="forexfactory",
@@ -76,3 +111,6 @@ def test_calendar_analysis_prompt_includes_structured_values():
     assert "Previous: 3.2%" in prompt
     assert "Forecast: 3.5%" in prompt
     assert "calendar-only" in prompt
+    assert "ABOVE FORECAST" in prompt
+    assert "BELOW FORECAST" in prompt
+    assert "Do not use labels such as \"Claude bias\"" in prompt

@@ -15,11 +15,33 @@ from models import AnalysisResult, NewsEvent
 
 logger = logging.getLogger(__name__)
 
-PROMPT_TEMPLATE = """Analyze this headline's direct impact on Gold (XAUUSD) and US Dollar (DXY) sentiment:
+GEOPOLITICAL_TERMS = (
+    "war", "iran", "bomb", "bombing", "attack", "attacks", "missile", "missiles",
+    "strike", "strikes", "military", "navy", "conflict", "escalation",
+)
+
+GEOPOLITICAL_GUIDANCE = """Use a balanced cross-asset causal analysis. For this geopolitical story, assess both:
+- safe-haven demand, which can support gold;
+- oil or crude-price upside, which can raise inflation expectations and keep yields or the USD higher, pressuring gold;
+- the resulting DXY, Treasury-yield/real-yield, liquidity, and risk-on/risk-off effects.
+
+Do not assume that geopolitical escalation is automatically bullish for gold. Separate the immediate safe-haven reaction from the sustained XAUUSD direction, identify missing live inputs (oil, DXY, yields, and price action), and lower confidence or use NEUTRAL/HOLD when the headline does not establish which force dominates. Do not invent current market prices or movements. Explain the likely effect on oil prices and DXY, including whether those channels support or pressure gold.
+
+Put the reasoning in exactly this compact labeled format so it can be shown directly to the trader:
+OIL: likely direction and mechanism, or "unknown from headline"
+DXY: likely direction and mechanism, or "unknown from headline"
+GOLD: safe-haven effect versus oil/USD/yield offset
+SUMMARY: immediate XAUUSD bias, sustained bias, key missing confirmation, and why the action is justified."""
+
+PROMPT_TEMPLATE = """Analyze this news story's likely impact on Gold (XAUUSD) and US Dollar (DXY) sentiment.
 
 Headline: {headline}
+Article preview: {content}
 Source: {source}
 Keywords: {keywords}
+Assets mentioned: {asset_mentions}
+
+{geopolitical_guidance}
 
 Respond strictly in this JSON format:
 {{
@@ -30,7 +52,7 @@ Respond strictly in this JSON format:
   \"reasoning\": \"Clear explanation\"
 }}"""
 
-CALENDAR_PROMPT_TEMPLATE = """Analyze this upcoming economic calendar release for Gold (XAUUSD) and the US Dollar (DXY).
+CALENDAR_PROMPT_TEMPLATE = """Analyze this economic calendar release for Gold (XAUUSD) and the US Dollar (DXY).
 
 Event: {headline}
 Currency: {currency}
@@ -40,15 +62,17 @@ Previous: {previous}
 Forecast: {forecast}
 Actual: {actual}
 
-This is a calendar-only pre-release analysis. Do not invent live market data.
-Use forecast versus previous only for the preliminary bias. The action must tell the trader to wait for the actual release before trading.
+This is a calendar-only analysis. Do not invent live market data or pretend to know the market's current position.
+When Actual is not released, compare forecast with previous and provide a cautious preparation action. Give event-specific scenarios for actual above forecast, near forecast, and below forecast. Explain why each scenario could affect USD, yields, and gold, and tell the trader to wait for the actual release and price confirmation.
+When Actual is released, compare actual with forecast and previous, identify which scenario occurred, and provide a cautious post-release action. If the numbers do not establish a clean edge, use WAIT/HOLD.
+Do not use labels such as "Claude bias" in the reasoning. Write trader-facing sections with these exact labels: ACTION, WHY, ABOVE FORECAST, NEAR FORECAST, BELOW FORECAST, CONFIRMATION.
 Respond strictly in this JSON format:
 {{
     "asset": "XAUUSD",
     "sentiment": "BULLISH/BEARISH/NEUTRAL",
     "impact_score": 9,
-    "action": "WAIT FOR ACTUAL AND MARKET REACTION",
-    "reasoning": "Short explanation of the forecast-based bias and what would confirm or invalidate it",
+    "action": "PREPARE FOR GOLD BUYS/SELLS or WAIT FOR ACTUAL",
+    "reasoning": "ACTION: ...\\nWHY: ...\\nABOVE FORECAST: ...\\nNEAR FORECAST: ...\\nBELOW FORECAST: ...\\nCONFIRMATION: ...",
     "confidence": 0.78
 }}"""
 
@@ -116,7 +140,18 @@ class ClaudeAnalyzer:
     @staticmethod
     def _prompt_for(event: NewsEvent) -> str:
         if event.calendar is None:
-            return PROMPT_TEMPLATE.format(headline=event.headline, source=event.source, keywords=", ".join(event.keywords))
+            return PROMPT_TEMPLATE.format(
+                headline=event.headline,
+                content=event.content or "unavailable",
+                source=event.source,
+                keywords=", ".join(event.keywords) or "none",
+                asset_mentions=", ".join(event.asset_mentions) or "none",
+                geopolitical_guidance=(
+                    GEOPOLITICAL_GUIDANCE
+                    if ClaudeAnalyzer._is_geopolitical_event(event)
+                    else "Assess only the direct event-specific effects. Do not infer unrelated oil or geopolitical effects."
+                ),
+            )
         calendar = event.calendar
         return CALENDAR_PROMPT_TEMPLATE.format(
             headline=event.headline,
@@ -127,6 +162,11 @@ class ClaudeAnalyzer:
             forecast=calendar.forecast or "unavailable",
             actual=calendar.actual or "not released",
         )
+
+    @staticmethod
+    def _is_geopolitical_event(event: NewsEvent) -> bool:
+        text = f"{event.headline} {event.content or ''}".casefold()
+        return any(re.search(rf"\b{re.escape(term)}\b", text) for term in GEOPOLITICAL_TERMS)
 
     def cost_metrics(self) -> CostMetrics:
         return CostMetrics(**self._metrics)

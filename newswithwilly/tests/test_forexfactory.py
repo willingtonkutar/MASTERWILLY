@@ -74,6 +74,32 @@ def test_parse_event_row_converts_local_time_to_utc():
     assert event.to_news_event().source == "forexfactory"
 
 
+def test_parse_event_row_accepts_date_label_in_time_cell():
+    from bs4 import BeautifulSoup
+
+    html = HTML.replace("8:30am", "AUG 23RD", 1)
+    row = BeautifulSoup(html, "html.parser").select_one("tr.calendar__row")
+    scraper = ForexFactoryScraper(timezone_name="UTC")
+
+    event = scraper.parse_event_row(row)
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 8, 24, tzinfo=timezone.utc)
+
+
+def test_parse_event_row_extracts_time_from_mixed_time_cell_text():
+    from bs4 import BeautifulSoup
+
+    html = HTML.replace("8:30am", "AUG 23RD 8:30am", 1)
+    row = BeautifulSoup(html, "html.parser").select_one("tr.calendar__row")
+    scraper = ForexFactoryScraper(timezone_name="UTC")
+
+    event = scraper.parse_event_row(row)
+
+    assert event is not None
+    assert event.timestamp == datetime(2026, 8, 24, 8, 30, tzinfo=timezone.utc)
+
+
 def test_check_once_deduplicates_events_and_reprocesses_actual_updates():
     class Queue:
         def __init__(self):
@@ -85,7 +111,7 @@ def test_check_once_deduplicates_events_and_reprocesses_actual_updates():
     queue = Queue()
     scraper = ForexFactoryScraper(event_queue=queue)
     calendar_event = ForexFactoryEvent(
-        name="CPI", timestamp=datetime.now(timezone.utc) + timedelta(minutes=10), currency="USD", impact_level="high", id=uuid4()
+        name="CPI", timestamp=datetime.now(timezone.utc) - timedelta(minutes=10), currency="USD", impact_level="high", actual="3.0%", id=uuid4()
     )
     scraper.get_weekly_calendar = lambda **kwargs: [calendar_event]
 
@@ -94,6 +120,25 @@ def test_check_once_deduplicates_events_and_reprocesses_actual_updates():
     scraper.get_weekly_calendar = lambda **kwargs: [replace(calendar_event, actual="3.1%")]
     assert len(scraper.check_once()) == 1
     assert len(queue.events) == 2
+
+
+def test_check_once_ignores_unreleased_events_owned_by_planner():
+    class Queue:
+        def __init__(self):
+            self.events = []
+
+        def put(self, event, *, impact_score):
+            self.events.append(event)
+
+    queue = Queue()
+    scraper = ForexFactoryScraper(event_queue=queue)
+    unreleased = ForexFactoryEvent(
+        name="FOMC", timestamp=datetime.now(timezone.utc) + timedelta(minutes=30), currency="USD", impact_level="high", id=uuid4()
+    )
+    scraper.get_weekly_calendar = lambda **kwargs: [unreleased]
+
+    assert scraper.check_once() == []
+    assert queue.events == []
 
 
 def test_daily_planned_events_are_claimed_once(tmp_path):

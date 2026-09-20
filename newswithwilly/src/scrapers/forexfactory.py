@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import json
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -143,13 +144,12 @@ class ForexFactoryScraper:
         ]
 
     def check_once(self, *, force_refresh: bool = False, process_window_hours: int = 1) -> list[ForexFactoryEvent]:
-        """Fetch medium- and high-impact USD events and enqueue them when configured."""
+        """Fetch released USD events and enqueue new or updated actual values."""
         events = self.filter_medium_or_high_impact_usd_events(self.get_weekly_calendar(force_refresh=force_refresh))
         now = datetime.now(timezone.utc)
-        window = timedelta(hours=process_window_hours)
         events = [
             event for event in events
-            if (now <= event.timestamp <= now + window) or (event.timestamp < now and event.actual)
+            if event.timestamp < now and event.actual
         ]
         new_events = []
         dirty = False
@@ -358,11 +358,15 @@ class ForexFactoryScraper:
             self._stop_event.wait(self.check_interval_seconds)
 
     def _parse_timestamp(self, event_date: date, event_time: str) -> datetime:
-        normalized_time = event_time.lower()
-        if not event_time or normalized_time in {"all day", "tentative"} or normalized_time.startswith("day "):
+        normalized_time = " ".join(event_time.split()).lower()
+        clock_match = re.search(r"\b\d{1,2}:\d{2}\s*(?:am|pm)\b", normalized_time)
+        if clock_match:
+            normalized_time = clock_match.group(0).replace(" ", "")
+        is_date_label = re.fullmatch(r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}(?:st|nd|rd|th)?", normalized_time)
+        if not normalized_time or normalized_time in {"all day", "tentative"} or normalized_time.startswith("day ") or is_date_label:
             local_value = datetime.combine(event_date, time_type.min)
         else:
-            parsed_time = datetime.strptime(event_time.upper(), "%I:%M%p").time()
+            parsed_time = datetime.strptime(normalized_time.upper(), "%I:%M%p").time()
             local_value = datetime.combine(event_date, parsed_time)
         return local_value.replace(tzinfo=self.local_timezone).astimezone(timezone.utc)
 
