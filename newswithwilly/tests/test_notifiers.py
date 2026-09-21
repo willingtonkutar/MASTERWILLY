@@ -110,6 +110,21 @@ def test_planned_analysis_sends_even_when_claude_score_is_below_threshold():
     assert len(notifier.sent) == 1
 
 
+def test_claude_failure_never_sends_telegram_even_for_planned_analysis():
+    notifier = FakeNotifier()
+    manager = AlertManager(notifier, impact_threshold=7, asset_cooldown_minutes=0)
+    event = make_event("CPI release")
+    analysis = make_analysis(event, score=1)
+    analysis = analysis.model_copy(update={"reasoning": "[CLAUDE_FAILURE] Claude analysis failed after retries"})
+
+    decision = asyncio.run(manager.process_analysis(analysis, event, planned=True))
+
+    assert not decision.sent
+    assert decision.alert is None
+    assert decision.reason == "Claude analysis failed"
+    assert notifier.sent == []
+
+
 def test_planned_analysis_does_not_cool_down_the_actual_alert():
     notifier = FakeNotifier()
     manager = AlertManager(notifier, impact_threshold=7, asset_cooldown_minutes=10)

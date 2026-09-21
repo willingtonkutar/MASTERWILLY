@@ -8,9 +8,11 @@ class FakeMessages:
     def __init__(self, response):
         self.response = response
         self.calls = 0
+        self.kwargs = []
 
     def create(self, **kwargs):
         self.calls += 1
+        self.kwargs.append(kwargs)
         return self.response
 
 
@@ -32,6 +34,7 @@ def test_analyzer_parses_structured_response_and_tracks_cost():
     assert result.event_id is not None
     assert messages.calls == 1
     assert analyzer.cost_metrics().input_tokens == 100
+    assert messages.kwargs[0]["max_tokens"] == 1000
 
 
 def test_analyzer_accepts_json_followed_by_claude_explanation():
@@ -62,6 +65,18 @@ def test_analyzer_falls_back_after_invalid_response():
 
     assert result.sentiment == "NEUTRAL"
     assert result.event_id is not None
+
+
+def test_analyzer_rejects_nested_response_fields_without_unhashable_error():
+    response = SimpleNamespace(
+        content=[SimpleNamespace(text='{"asset":"XAUUSD","sentiment":{"value":"BEARISH"},"impact_score":8,"action":"LOOK FOR SELLS","reasoning":"Higher rates pressure gold."}')]
+    )
+    analyzer = ClaudeAnalyzer(client=SimpleNamespace(messages=FakeMessages(response)), max_retries=1)
+
+    result = analyzer.analyze_event(event())
+
+    assert result.sentiment == "NEUTRAL"
+    assert "failed after retries" in result.reasoning
 
 
 def test_news_prompt_checks_safe_haven_and_oil_offsets_for_xauusd():

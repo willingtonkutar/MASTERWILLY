@@ -64,6 +64,9 @@ class AlertManager:
     async def process_analysis(self, analysis: AnalysisResult, event: NewsEvent, *, planned: bool = False) -> AlertDecision:
         """Evaluate, persist, and deliver an analysis according to alert policy."""
         priority = self._priority(analysis.impact_score)
+        if analysis.reasoning.startswith("[CLAUDE_FAILURE]"):
+            logger.warning("Claude analysis failed; Telegram alert suppressed: %s", event.headline)
+            return AlertDecision(priority, None, False, "Claude analysis failed")
         if priority == "LOW" and not planned:
             logger.info("Low-impact event logged without alert: %s", event.headline)
             return AlertDecision(priority, None, False, "impact score below threshold")

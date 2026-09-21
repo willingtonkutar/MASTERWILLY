@@ -52,6 +52,26 @@ Respond strictly in this JSON format:
   \"reasoning\": \"Clear explanation\"
 }}"""
 
+RESPONSE_FORMAT_RULES = """
+Return one complete JSON object only. Do not wrap it in Markdown fences and do not add commentary.
+Every field must be a scalar: asset, sentiment, action, and reasoning are strings; impact_score is
+an integer from 1 to 10; confidence is a number from 0 to 1. Do not return nested objects or arrays.
+"""
+
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "asset": {"type": "string"},
+        "sentiment": {"type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL"]},
+        "impact_score": {"type": "integer", "minimum": 1, "maximum": 10},
+        "action": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": ["asset", "sentiment", "impact_score", "action", "reasoning"],
+    "additionalProperties": False,
+}
+
 CALENDAR_PROMPT_TEMPLATE = """Analyze this economic calendar release for Gold (XAUUSD) and the US Dollar (DXY).
 
 Event: {headline}
@@ -123,9 +143,10 @@ class ClaudeAnalyzer:
                 self._metrics["requests"] += 1
                 response = self._client.messages.create(
                     model=self.model,
-                    max_tokens=500,
+                    max_tokens=1000,
                     temperature=0,
-                    messages=[{"role": "user", "content": prompt}],
+                    output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
+                    messages=[{"role": "user", "content": prompt + RESPONSE_FORMAT_RULES}],
                 )
                 self._record_usage(response)
                 payload = self._parse_response(response)
@@ -172,11 +193,22 @@ class ClaudeAnalyzer:
         return CostMetrics(**self._metrics)
 
     def _fallback(self, event: NewsEvent, reason: str) -> AnalysisResult:
-        return AnalysisResult(event_id=event.id, asset="XAUUSD", sentiment="NEUTRAL", impact_score=1, action="HOLD", reasoning=reason, confidence=0.0, analyzed_at=datetime.now(timezone.utc))
+        return AnalysisResult(
+            event_id=event.id,
+            asset="XAUUSD",
+            sentiment="NEUTRAL",
+            impact_score=1,
+            action="HOLD",
+            reasoning=f"[CLAUDE_FAILURE] {reason}",
+            confidence=0.0,
+            analyzed_at=datetime.now(timezone.utc),
+        )
 
     @staticmethod
     def _parse_response(response: Any) -> dict[str, Any]:
         content = response.content[0].text if getattr(response, "content", None) else ""
+        if not isinstance(content, str):
+            raise ValueError(f"Claude response text must be a string, got {type(content).__name__}")
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.IGNORECASE)
         try:
             payload = json.loads(content)
@@ -185,10 +217,31 @@ class ClaudeAnalyzer:
             if start < 0:
                 raise
             payload, _ = json.JSONDecoder().raw_decode(content[start:])
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"Claude response JSON must be an object, got {type(payload).__name__}"
+            )
         required = {"asset", "sentiment", "impact_score", "action", "reasoning"}
         if not required.issubset(payload):
             raise ValueError("Claude response is missing required fields")
-        return {key: payload[key] for key in required} | ({"confidence": payload["confidence"]} if "confidence" in payload else {})
+        for field in ("asset", "sentiment", "action", "reasoning"):
+            if not isinstance(payload[field], str):
+                raise ValueError(
+                    f"Claude response field {field!r} must be a string, "
+                    f"got {type(payload[field]).__name__}"
+                )
+        if isinstance(payload["impact_score"], bool) or not isinstance(
+            payload["impact_score"], (int, float)
+        ):
+            raise ValueError("Claude response field 'impact_score' must be numeric")
+        if "confidence" in payload and (
+            isinstance(payload["confidence"], bool)
+            or not isinstance(payload["confidence"], (int, float))
+        ):
+            raise ValueError("Claude response field 'confidence' must be numeric")
+        return {key: payload[key] for key in required} | (
+            {"confidence": payload["confidence"]} if "confidence" in payload else {}
+        )
 
     def _record_usage(self, response: Any) -> None:
         usage = getattr(response, "usage", None)

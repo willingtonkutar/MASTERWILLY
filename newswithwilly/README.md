@@ -40,7 +40,7 @@ The current runtime flow is:
 3. **News ingestion** checks Forex Factory breaking news on regular and critical schedules.
 4. **Filtering** applies keyword and news-mode rules before paid analysis calls.
 5. **Analysis** sends selected events to Claude and validates structured output.
-6. **Delivery** sends qualifying alerts to Telegram with deduplication.
+6. **Delivery** sends qualifying alerts to Telegram with deduplication. Claude failures are logged and suppressed; they never become Telegram alerts.
 
 ## Offline component validation
 
@@ -92,7 +92,7 @@ Calendar alerts use a dedicated Telegram layout rather than the generic news lay
 - **Medium impact:** shorter gold alert with previous, forecast, directional surprise map, simple plan, confidence, and a wait-for-actual warning.
 - **After release:** the actual value is included when Forex Factory publishes it, and the event may be processed again because the actual value changed.
 
-Claude is used for interpretation, not for sourcing numbers. For calendar events it receives the event name, currency, impact, release time, previous, forecast, and actual when available. It returns the preliminary sentiment, action, reasoning, impact score, and confidence. The application owns the countdown, message structure, deduplication, and calendar values.
+Claude is used for interpretation, not for sourcing numbers. For calendar events it receives the event name, currency, impact, release time, previous, forecast, and actual when available. It returns the preliminary sentiment, action, reasoning, impact score, and confidence. The application owns the countdown, message structure, deduplication, and calendar values. Claude requests use structured JSON output with a 1,000-token response budget. Invalid, truncated, unavailable, or otherwise failed Claude responses produce a neutral internal fallback that is logged locally and suppressed from Telegram, including planned calendar alerts.
 
 This first calendar version intentionally does not require live DXY, US10Y, or gold-price data. It does not display fabricated or unavailable market snapshots. A market-data provider can be added later as optional enrichment without changing the calendar scheduling contract.
 
@@ -248,7 +248,7 @@ Check `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, channel permissions, and `TELEGR
 
 ### Claude returns a neutral fallback
 
-Confirm `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, and network access. Neutral fallback is intentional when the API times out, fails validation, or is not configured.
+Confirm `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, and network access. Neutral fallback is intentional when the API times out, fails validation, or is not configured. The fallback is marked internally as a Claude failure and is never sent to Telegram; inspect `LOG_FILE` for the original failure reason.
 
 ### Database or migration errors
 
