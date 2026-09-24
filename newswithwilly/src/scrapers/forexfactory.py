@@ -129,7 +129,15 @@ class ForexFactoryScraper:
             if self._cache and not force_refresh and now - self._cache[0] < self.cache_seconds:
                 return list(self._cache[1])
 
-        response = self._request_with_retries()
+        try:
+            response = self._request_with_retries()
+        except RuntimeError:
+            with self._cache_lock:
+                cached_events = list(self._cache[1]) if self._cache else None
+            if cached_events is None:
+                raise
+            logger.warning("Forex Factory unavailable; using stale calendar cache")
+            return cached_events
         events = self._parse_calendar(response.text, response.url)
         with self._cache_lock:
             self._cache = (time.monotonic(), events)

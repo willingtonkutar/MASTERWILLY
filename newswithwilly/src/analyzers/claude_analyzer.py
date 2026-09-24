@@ -145,7 +145,6 @@ class ClaudeAnalyzer:
                     model=self.model,
                     max_tokens=1000,
                     temperature=0,
-                    output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
                     messages=[{"role": "user", "content": prompt + RESPONSE_FORMAT_RULES}],
                 )
                 self._record_usage(response)

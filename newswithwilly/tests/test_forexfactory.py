@@ -2,6 +2,8 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
+import requests
+
 from scrapers.forexfactory import ForexFactoryEvent, ForexFactoryScraper
 
 
@@ -43,6 +45,12 @@ class FakeSession:
         return FakeResponse()
 
 
+class FailingSession(FakeSession):
+    def get(self, *args, **kwargs):
+        self.calls += 1
+        raise requests.ConnectionError("temporary DNS failure")
+
+
 def test_scraper_parses_filters_and_caches_calendar():
     session = FakeSession()
     scraper = ForexFactoryScraper(session=session, timezone_name="UTC", cache_seconds=300)
@@ -60,6 +68,16 @@ def test_scraper_parses_filters_and_caches_calendar():
     assert selected[0].timestamp.hour == 8
     assert selected[1].impact_level == "medium"
     assert selected[0].to_news_event().calendar.previous == "3.0%"
+
+
+def test_scraper_uses_stale_cache_when_refresh_fails():
+    session = FakeSession()
+    scraper = ForexFactoryScraper(session=session, timezone_name="UTC", cache_seconds=0, max_retries=1)
+
+    cached_events = scraper.get_weekly_calendar()
+    scraper._session = FailingSession()
+
+    assert scraper.get_weekly_calendar(force_refresh=True) == cached_events
 
 
 def test_parse_event_row_converts_local_time_to_utc():
